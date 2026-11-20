@@ -217,3 +217,27 @@ def test_salvar_slug_acentos_e_fallback(client, tmp_path, img_carro, img_peca, i
     )
     assert r2.status_code == 200
     assert (tmp_path / "anuncio.png").exists()
+
+
+def test_pagina_inicial(client):
+    r = client.get("/")
+    assert r.status_code == 200
+    assert "text/html" in r.content_type
+    html = r.get_data(as_text=True)
+    assert "Gerador de Anúncio" in html
+    assert "/static/style.css" in html
+    assert "/static/app.js" in html
+    assert "Baixar PNG" in html
+    for marcador in ('data-tipo="carro"', 'data-tipo="peca"', 'data-tipo="print"', 'id="crop-canvas"'):
+        assert marcador in html
+
+
+def test_ativos_estaticos_e_offline(client):
+    for rota in ("/", "/static/style.css", "/static/app.js"):
+        r = client.get(rota)
+        assert r.status_code == 200
+        conteudo = r.get_data(as_text=True).lower()
+        assert "http://" not in conteudo
+        assert "https://" not in conteudo
+
+

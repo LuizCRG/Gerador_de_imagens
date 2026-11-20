@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gerador de Anúncio Shopee</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <h1>Gerador de Anúncio Shopee</h1>
+      <span class="badge-local">1024 × 1024 px • Offline</span>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="panel panel-inputs" aria-label="Configuração do anúncio">
+      <div class="section-block">
+        <h2>1. Fotos</h2>
+        <div class="upload-grid">
+          <div class="dropzone" data-tipo="carro">
+            <input
+              id="input-carro"
+              class="dropzone-input"
+              type="file"
+              accept="image/*"
+              data-tipo="carro"
+              aria-label="Foto do carro"
+            >
+            <div class="dropzone-thumb-wrap" hidden>
+              <img class="dropzone-thumb" alt="Miniatura do carro">
+            </div>
+            <div class="dropzone-body">
+              <span class="dropzone-title">Carro</span>
+              <span class="dropzone-meta">Arraste ou clique</span>
+            </div>
+          </div>
+
+          <div class="dropzone" data-tipo="peca">
+            <input
+              id="input-peca"
+              class="dropzone-input"
+              type="file"
+              accept="image/*"
+              data-tipo="peca"
+              aria-label="Foto da peça"
+            >
+            <div class="dropzone-thumb-wrap" hidden>
+              <img class="dropzone-thumb" alt="Miniatura da peça">
+            </div>
+            <div class="dropzone-body">
+              <span class="dropzone-title">Peça</span>
+              <span class="dropzone-meta">Arraste ou clique</span>
+            </div>
+          </div>
+
+          <div class="dropzone" data-tipo="print">
+            <input
+              id="input-print"
+              class="dropzone-input"
+              type="file"
+              accept="image/*"
+              data-tipo="print"
+              aria-label="Print de aplicação"
+            >
+            <div class="dropzone-thumb-wrap" hidden>
+              <img class="dropzone-thumb" alt="Miniatura do print">
+            </div>
+            <div class="dropzone-body">
+              <span class="dropzone-title">Print</span>
+              <span class="dropzone-meta">Arraste ou clique</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h2>2. Textos</h2>
+        <div class="field">
+          <label for="titulo">Título</label>
+          <input
+            id="titulo"
+            name="titulo"
+            type="text"
+            placeholder="Ex.: Puxador de Porta"
+            autocomplete="off"
+          >
+        </div>
+
+        <div class="field">
+          <div class="field-head">
+            <label for="subtitulo">Subtítulo <span class="hint">(até 3 linhas, uma por linha)</span></label>
+            <span id="subtitulo-contador" class="field-counter" aria-live="polite">0/3 linhas</span>
+          </div>
+          <textarea
+            id="subtitulo"
+            name="subtitulo"
+            rows="3"
+            placeholder="COMPATÍVEL COM&#10;NEW FIESTA SEDAN&#10;2011 A 2017"
+          ></textarea>
+        </div>
+
+        <div class="field">
+          <label for="etiqueta">Etiqueta do print</label>
+          <input
+            id="etiqueta"
+            name="etiqueta"
+            type="text"
+            placeholder="Ex.: APLICAÇÃO NA PORTA"
+            autocomplete="off"
+          >
+        </div>
+      </div>
+
+      <div id="crop-section" class="section-block" hidden>
+        <div class="crop-header">
+          <div>
+            <h2>3. Recorte do print</h2>
+            <p id="crop-info" class="hint">Proporção fixa 350:255 • Arraste ou redimensione pelo canto</p>
+          </div>
+          <button id="btn-centralizar-recorte" type="button" class="btn btn-secondary">Centralizar recorte</button>
+        </div>
+        <div id="crop-canvas-wrap" class="crop-canvas-wrap">
+          <canvas id="crop-canvas" aria-label="Editor de recorte do print"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel panel-preview" aria-label="Prévia e exportação">
+      <div id="erro-banner" class="error-banner" role="alert" hidden></div>
+
+      <div class="preview-header">
+        <h2>Prévia (1024 × 1024)</h2>
+        <span id="preview-status" class="preview-status" hidden>Gerando prévia...</span>
+      </div>
+
+      <div class="preview-stage">
+        <img id="preview-img" class="preview-img" alt="Prévia do anúncio gerado" hidden>
+        <div id="preview-placeholder" class="preview-placeholder">
+          Envie as 3 fotos e informe o título para gerar a prévia automaticamente.
+        </div>
+      </div>
+
+      <div id="avisos-box" class="avisos-box" hidden>
+        <p id="avisos-ok" class="avisos-ok" hidden>Nenhum ajuste necessário</p>
+        <ul id="avisos-lista" class="avisos-lista" hidden></ul>
+      </div>
+
+      <div class="actions-bar">
+        <button id="btn-baixar" type="button" class="btn btn-primary">Baixar PNG</button>
+        <span id="status-salvar" class="save-status" role="status" hidden></span>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/app.js" defer></script>
+</body>
+</html>
