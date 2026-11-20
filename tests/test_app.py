@@ -75,6 +75,18 @@ def test_upload_sem_arquivo(client):
     assert "erro" in r.json
 
 
+def test_upload_decompression_bomb_retorna_400(client, monkeypatch):
+    monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 10)
+    img_pequena = Image.new("RGB", (10, 10), (100, 120, 140))
+    r = client.post(
+        "/api/imagem/carro",
+        data={"arquivo": _para_upload(img_pequena, "gigante.png")},
+    )
+    assert r.status_code == 400
+    assert "erro" in r.json
+    assert "grande demais" in r.json["erro"].lower()
+
+
 def test_previa_sem_imagens(client, img_carro, img_peca):
     payload = {
         "titulo": "Puxador de Porta",
@@ -151,6 +163,35 @@ def test_previa_ok(client, img_carro, img_peca, img_print):
         assert im.size == (1024, 1024)
         assert im.mode == "RGB"
     assert len(r.json["recorte_print"]) == 4
+
+
+def test_previa_respeita_recorte_print_explicito(client, img_carro, img_peca, img_print):
+    _subir_tres_imagens(client, img_carro, img_peca, img_print)
+
+    base_payload = {
+        "titulo": "Puxador de Porta",
+        "subtitulo": ["Dianteiro Esquerdo"],
+        "etiqueta": "ORIGINAL",
+    }
+    r_auto = client.post("/api/previa", json={**base_payload, "recorte_print": None})
+    assert r_auto.status_code == 200
+
+    recorte_explicito = [100, 300, 450, 555]
+    r = client.post("/api/previa", json={**base_payload, "recorte_print": recorte_explicito})
+    assert r.status_code == 200
+    assert r.json["recorte_print"] == recorte_explicito
+    assert r.json["recorte_print"] != r_auto.json["recorte_print"]
+    assert r.json["png"] != r_auto.json["png"]
+
+    png = base64.b64decode(r.json["png"])
+    with Image.open(BytesIO(png)) as im:
+        cor_centro = im.getpixel((48 + 175, 720 + 127))[:3]
+    esperada = (
+        img_print.crop(tuple(recorte_explicito))
+        .resize((350, 255), Image.Resampling.LANCZOS)
+        .getpixel((175, 127))[:3]
+    )
+    assert cor_centro == esperada
 
 
 def test_salvar_grava_arquivo(client, tmp_path, img_carro, img_peca, img_print):
@@ -230,6 +271,28 @@ def test_pagina_inicial(client):
     assert "Baixar PNG" in html
     for marcador in ('data-tipo="carro"', 'data-tipo="peca"', 'data-tipo="print"', 'id="crop-canvas"'):
         assert marcador in html
+
+
+def test_get_raiz_limpa_imagens(app_e_client, img_carro, img_peca, img_print):
+    app, client = app_e_client
+    _subir_tres_imagens(client, img_carro, img_peca, img_print)
+    assert set(app.config["IMAGENS"]) == {"carro", "peca", "print"}
+
+    r = client.get("/")
+    assert r.status_code == 200
+    assert app.config["IMAGENS"] == {}
+
+    r_previa = client.post(
+        "/api/previa",
+        json={
+            "titulo": "Puxador de Porta",
+            "subtitulo": [],
+            "etiqueta": "ORIGINAL",
+            "recorte_print": None,
+        },
+    )
+    assert r_previa.status_code == 400
+    assert "carro" in r_previa.json["erro"].lower()
 
 
 def test_ativos_estaticos_e_offline(client):

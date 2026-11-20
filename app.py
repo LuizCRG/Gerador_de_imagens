@@ -105,6 +105,7 @@ def criar_app(pasta_saida: Path = Path("saida")) -> Flask:
 
     @app.get("/")
     def index() -> Response:
+        app.config["IMAGENS"].clear()
         return app.send_static_file("index.html")
 
     @app.post("/api/imagem/<tipo>")
@@ -122,6 +123,8 @@ def criar_app(pasta_saida: Path = Path("saida")) -> Flask:
 
         try:
             img = abrir_imagem(dados)
+        except Image.DecompressionBombError:
+            return _erro("Arquivo de imagem inválido ou grande demais")
         except (UnidentifiedImageError, OSError, ValueError):
             return _erro("Arquivo de imagem inválido ou ilegível")
 

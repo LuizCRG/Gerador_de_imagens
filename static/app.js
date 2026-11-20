@@ -20,6 +20,7 @@
     previewSeq: 0,
     previewAbort: null,
     isSaving: false,
+    errorSource: null,
   };
 
   const tituloInput = document.getElementById("titulo");
@@ -45,14 +46,21 @@
     return Math.min(Math.max(val, min), max);
   }
 
-  function showError(msg) {
+  function showError(msg, source = "preview") {
+    state.errorSource = source;
     erroBanner.textContent = msg;
     erroBanner.hidden = false;
   }
 
   function clearError() {
+    state.errorSource = null;
     erroBanner.textContent = "";
     erroBanner.hidden = true;
+  }
+
+  function clearSaveStatus() {
+    statusSalvar.hidden = true;
+    statusSalvar.textContent = "";
   }
 
   function allPhotosUploaded() {
@@ -151,6 +159,10 @@
 
   function schedulePreview() {
     cancelPendingPreview();
+    clearSaveStatus();
+    if (state.errorSource !== "upload") {
+      clearError();
+    }
     if (!allPhotosUploaded() || !tituloInput.value.trim()) {
       showPreviewPlaceholder();
       return;
@@ -297,6 +309,9 @@
 
   function getPointerInfo(e) {
     const rect = cropCanvas.getBoundingClientRect();
+    if (!rect.width || !rect.height) {
+      return { sx: 0, sy: 0, inHandle: false, inBox: false };
+    }
     const dx = e.clientX - rect.left;
     const dy = e.clientY - rect.top;
     const { width: serverW, height: serverH } = state.printMeta;
@@ -308,9 +323,9 @@
     const rw = state.crop.w * (rect.width / serverW);
     const rh = state.crop.h * (rect.height / serverH);
 
-    const hxMin = rw <= 28 ? rx + rw * 0.55 : rx + rw - 18;
-    const hyMin = rh <= 28 ? ry + rh * 0.55 : ry + rh - 18;
-    const inHandle = dx >= hxMin && dx <= rx + rw + 6 && dy >= hyMin && dy <= ry + rh + 6;
+    const hxMin = Math.max(rx + rw * 0.5, rx + rw - 20);
+    const hyMin = Math.max(ry + rh * 0.5, ry + rh - 20);
+    const inHandle = dx >= hxMin && dx <= rx + rw + 10 && dy >= hyMin && dy <= ry + rh + 10;
     const inBox = dx >= rx && dx <= rx + rw && dy >= ry && dy <= ry + rh;
 
     return { sx, sy, inHandle, inBox };
@@ -431,6 +446,7 @@
     dropzone.classList.add("is-uploading");
     metaEl.textContent = "Enviando...";
     cancelPendingPreview();
+    clearSaveStatus();
 
     const formData = new FormData();
     formData.append("arquivo", file);
@@ -447,7 +463,7 @@
       }
       if (!res.ok) {
         metaEl.textContent = state.metaText[tipo];
-        showError(data.erro || "Não foi possível enviar a imagem.");
+        showError(data.erro || "Não foi possível enviar a imagem.", "upload");
         return;
       }
 
@@ -502,7 +518,7 @@
       }
       if (seq === state.uploadSeq[tipo]) {
         metaEl.textContent = state.metaText[tipo];
-        showError("Erro de conexão ao enviar a imagem.");
+        showError("Erro de conexão ao enviar a imagem.", "upload");
       }
     } finally {
       if (seq === state.uploadSeq[tipo]) {
@@ -586,8 +602,7 @@
     if (state.isSaving) {
       return;
     }
-    statusSalvar.hidden = true;
-    statusSalvar.textContent = "";
+    clearSaveStatus();
     state.isSaving = true;
     btnBaixar.disabled = true;
     btnBaixar.textContent = "Salvando...";
@@ -600,7 +615,7 @@
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        showError(data.erro || "Erro ao salvar o PNG.");
+        showError(data.erro || "Erro ao salvar o PNG.", "save");
         return;
       }
 
@@ -619,7 +634,7 @@
       statusSalvar.textContent = `Salvo em saida/${filename}`;
       statusSalvar.hidden = false;
     } catch {
-      showError("Erro de conexão ao salvar o PNG.");
+      showError("Erro de conexão ao salvar o PNG.", "save");
     } finally {
       state.isSaving = false;
       btnBaixar.disabled = false;

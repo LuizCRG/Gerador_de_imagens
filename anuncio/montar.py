@@ -241,7 +241,11 @@ def montar(e: Entrada) -> Resultado:
     peca_sem_fundo = remover_fundo_branco(e.peca)
     carro_rec = recortar_carro(e.carro)
     base_carro = CARRO_POS[1] + carro_rec.height
-    area = detectar_area_foto(e.print_img)
+    area = (
+        detectar_area_foto(e.print_img)
+        if e.recorte_print is None
+        else (0, 0, e.print_img.width, e.print_img.height)
+    )
     recorte = normalizar_recorte(e.recorte_print, e.print_img.size, area)
 
     caixa_carro_tinta = _caixa_tinta_carro(carro_rec)

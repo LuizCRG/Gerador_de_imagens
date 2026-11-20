@@ -300,3 +300,21 @@ def test_proximo_ajuste_guarda_escala_peca():
         0.97,
         True,
     )
+
+
+def test_montar_recorte_explicito_nao_chama_detectar_area_foto(
+    monkeypatch, img_carro, img_peca, img_print
+):
+    def _falhar(_img):
+        raise AssertionError("detectar_area_foto não deveria rodar quando recorte_print existe")
+
+    monkeypatch.setattr("anuncio.montar.detectar_area_foto", _falhar)
+    r = montar(
+        _entradas_padrao(
+            img_carro,
+            img_peca,
+            img_print,
+            recorte_print=(100, 300, 450, 555),
+        )
+    )
+    assert r.recorte_print == (100, 300, 450, 555)
