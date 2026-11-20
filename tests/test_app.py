@@ -287,6 +287,17 @@ def test_pagina_inicial(client):
         'id="tam-sub"',
         'id="tam-etiqueta"',
         'id="btn-restaurar-tamanhos"',
+        'id="ia-status"',
+        'id="btn-ia-config"',
+        'id="ia-config-panel"',
+        'id="ia-api-key"',
+        'id="btn-salvar-chave"',
+        'data-ai-row="carro"',
+        'data-ai-row="peca"',
+        'data-ai-row="print"',
+        'class="btn btn-secondary btn-remover-fundo" data-tipo="carro"',
+        'class="btn btn-secondary btn-remover-fundo" data-tipo="peca"',
+        'class="btn btn-secondary btn-remover-fundo" data-tipo="print"',
     ):
         assert marcador in html
 
@@ -393,5 +404,98 @@ def test_previa_dimensoes_invalidas_retorna_400(client, img_peca):
     )
     assert r2.status_code == 400
     assert "tam_titulo" in r2.json["erro"].lower()
+
+
+def test_remover_fundo_tipo_invalido_e_sem_imagem(client):
+    r_inv = client.post("/api/imagem/xyz/remover-fundo", json={"usar": True})
+    assert r_inv.status_code == 404
+
+    r_sem = client.post("/api/imagem/peca/remover-fundo", json={"usar": True})
+    assert r_sem.status_code == 400
+    assert "envie" in r_sem.json["erro"].lower()
+
+
+def test_remover_e_restaurar_fundo_com_cache(tmp_path, img_carro, img_peca, img_print):
+    chamadas = []
+
+    def fake_removedor(img, *, tipo="peca", **_kwargs):
+        chamadas.append(tipo)
+        return Image.new("RGB", img.size, (255, 255, 255))
+
+    app = criar_app(
+        pasta_saida=tmp_path,
+        removedor_fundo=fake_removedor,
+        env_path=tmp_path / ".env",
+    )
+    client = app.test_client()
+    _subir_tres_imagens(client, img_carro, img_peca, img_print)
+    cor_original = app.config["IMAGENS"]["peca"].getpixel((270, 200))
+
+    r1 = client.post("/api/imagem/peca/remover-fundo", json={"usar": True})
+    assert r1.status_code == 200
+    assert r1.json["fundo_removido"] is True
+    assert r1.json["largura"] == img_peca.width
+    assert chamadas == ["peca"]
+    assert app.config["IMAGENS"]["peca"].getpixel((270, 200)) == (255, 255, 255)
+
+    # Restaurar original volta para a imagem original sem chamar IA
+    r2 = client.post("/api/imagem/peca/remover-fundo", json={"usar": False})
+    assert r2.status_code == 200
+    assert r2.json["fundo_removido"] is False
+    assert app.config["IMAGENS"]["peca"].getpixel((270, 200)) == cor_original
+    assert chamadas == ["peca"]
+
+    # Reaplicar usa cache sem chamar IA novamente
+    r3 = client.post("/api/imagem/peca/remover-fundo", json={"usar": True})
+    assert r3.status_code == 200
+    assert r3.json["fundo_removido"] is True
+    assert chamadas == ["peca"]
+
+    # Novo upload limpa o cache para aquela imagem
+    client.post("/api/imagem/peca", data={"arquivo": _para_upload(img_peca)})
+    r4 = client.post("/api/imagem/peca/remover-fundo", json={"usar": True})
+    assert r4.status_code == 200
+    assert chamadas == ["peca", "peca"]
+
+
+def test_remover_fundo_erro_ia_retorna_400_ou_502(tmp_path, img_peca):
+    def falhar_valor(_img, **_kwargs):
+        raise ValueError("Chave ausente")
+
+    app1 = criar_app(pasta_saida=tmp_path, removedor_fundo=falhar_valor, env_path=tmp_path / ".env")
+    c1 = app1.test_client()
+    c1.post("/api/imagem/peca", data={"arquivo": _para_upload(img_peca)})
+    r1 = c1.post("/api/imagem/peca/remover-fundo", json={"usar": True})
+    assert r1.status_code == 400 and "Chave ausente" in r1.json["erro"]
+
+    def falhar_runtime(_img, **_kwargs):
+        raise RuntimeError("Falha remota")
+
+    app2 = criar_app(pasta_saida=tmp_path, removedor_fundo=falhar_runtime, env_path=tmp_path / ".env")
+    c2 = app2.test_client()
+    c2.post("/api/imagem/peca", data={"arquivo": _para_upload(img_peca)})
+    r2 = c2.post("/api/imagem/peca/remover-fundo", json={"usar": True})
+    assert r2.status_code == 502 and "Falha remota" in r2.json["erro"]
+
+
+def test_config_ia_nao_expoe_chave_e_salva_env(tmp_path, monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    env_file = tmp_path / ".env"
+    app = criar_app(pasta_saida=tmp_path, env_path=env_file)
+    client = app.test_client()
+
+    r0 = client.get("/api/config/ia")
+    assert r0.status_code == 200
+    assert r0.json == {"configurada": False}
+
+    r_set = client.post("/api/config/ia", json={"api_key": "AQ.segredo123"})
+    assert r_set.status_code == 200
+    assert r_set.json == {"configurada": True}
+    assert "GEMINI_API_KEY=AQ.segredo123" in env_file.read_text(encoding="utf-8")
+
+    r1 = client.get("/api/config/ia")
+    assert r1.status_code == 200
+    assert r1.json == {"configurada": True}
+    assert "segredo" not in r1.get_data(as_text=True)
 
 

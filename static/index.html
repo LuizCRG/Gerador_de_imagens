@@ -10,9 +10,21 @@
   <header class="topbar">
     <div class="topbar-inner">
       <h1>Gerador de Anúncio Shopee</h1>
-      <span class="badge-local">1024 × 1024 px • Offline</span>
+      <div class="topbar-actions">
+        <span class="badge-local">1024 × 1024 px • Offline</span>
+        <span id="ia-status" class="ia-status">IA: Verificando...</span>
+        <button id="btn-ia-config" type="button" class="btn btn-secondary btn-sm">Chave IA</button>
+      </div>
     </div>
   </header>
+
+  <section id="ia-config-panel" class="ia-config-panel" hidden aria-label="Configuração da chave Nano Banana">
+    <div class="ia-config-inner">
+      <label for="ia-api-key" class="ia-config-label">Chave API (Nano Banana):</label>
+      <input id="ia-api-key" class="ia-api-key-input" type="password" placeholder="Cole sua chave API para salvar no .env local" autocomplete="off">
+      <button id="btn-salvar-chave" type="button" class="btn btn-primary btn-sm">Salvar chave</button>
+    </div>
+  </section>
 
   <main class="layout">
     <section class="panel panel-inputs" aria-label="Configuração do anúncio">
@@ -47,6 +59,10 @@
               <span class="dropzone-meta">Arraste ou clique</span>
             </div>
           </div>
+          <div class="ai-bg-row" data-ai-row="carro" hidden>
+            <button type="button" class="btn btn-secondary btn-remover-fundo" data-tipo="carro">Remover fundo (IA)</button>
+            <span class="ai-bg-hint">Opcional • Nano Banana</span>
+          </div>
           <div class="range-row">
             <label for="largura-carro">Largura máx.</label>
             <input id="largura-carro" type="range" min="250" max="900" step="10" value="500">
@@ -80,6 +96,10 @@
               <span class="dropzone-title">Foto da peça</span>
               <span class="dropzone-meta">Arraste ou clique</span>
             </div>
+          </div>
+          <div class="ai-bg-row" data-ai-row="peca" hidden>
+            <button type="button" class="btn btn-secondary btn-remover-fundo" data-tipo="peca">Remover fundo (IA)</button>
+            <span class="ai-bg-hint">Opcional • Nano Banana</span>
           </div>
           <div class="range-row">
             <label for="escala-peca">Tamanho</label>
@@ -170,6 +190,10 @@
               <span class="dropzone-title">Foto/print do local</span>
               <span class="dropzone-meta">Arraste ou clique</span>
             </div>
+          </div>
+          <div class="ai-bg-row" data-ai-row="print" hidden>
+            <button type="button" class="btn btn-secondary btn-remover-fundo" data-tipo="print">Remover fundo (IA)</button>
+            <span class="ai-bg-hint">Opcional • Nano Banana</span>
           </div>
 
           <div class="range-row">

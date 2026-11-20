@@ -16,8 +16,17 @@
     tamEtiqueta: 24,
   };
 
+  const iaStatusEl = document.getElementById("ia-status");
+  const btnIaConfig = document.getElementById("btn-ia-config");
+  const iaConfigPanel = document.getElementById("ia-config-panel");
+  const iaApiKeyInput = document.getElementById("ia-api-key");
+  const btnSalvarChave = document.getElementById("btn-salvar-chave");
+
   const state = {
     uploaded: { carro: false, peca: false, print: false },
+    fileName: { carro: "", peca: "", print: "" },
+    fundoRemovido: { carro: false, peca: false, print: false },
+    aiBusy: { carro: false, peca: false, print: false },
     metaText: { carro: DEFAULT_META, peca: DEFAULT_META, print: DEFAULT_META },
     objectUrls: { carro: null, peca: null, print: null },
     uploadSeq: { carro: 0, peca: 0, print: 0 },
@@ -601,6 +610,9 @@
       }
       state.objectUrls[tipo] = nextUrl;
       state.uploaded[tipo] = true;
+      state.fileName[tipo] = file.name;
+      state.fundoRemovido[tipo] = false;
+      state.aiBusy[tipo] = false;
 
       thumbImg.src = nextUrl;
       thumbWrap.hidden = false;
@@ -609,6 +621,7 @@
       metaEl.textContent = resumo;
       metaEl.title = resumo;
       dropzone.classList.add("is-uploaded");
+      updateAiBgButton(tipo);
       clearError();
 
       if (tipo === "print" && loadedPrintImg) {
@@ -810,7 +823,220 @@
     schedulePreview(true);
   });
 
+  function atualizarBadgeIa(configurada) {
+    if (!iaStatusEl) return;
+    iaStatusEl.textContent = configurada ? "IA: Pronta" : "IA: Sem chave";
+    iaStatusEl.classList.toggle("is-ready", configurada);
+    iaStatusEl.classList.toggle("is-missing", !configurada);
+  }
+
+  async function carregarStatusIa() {
+    if (!iaStatusEl) return;
+    try {
+      const res = await fetch("/api/config/ia");
+      if (!res.ok) throw new Error("status");
+      const data = await res.json();
+      atualizarBadgeIa(Boolean(data.configurada));
+    } catch {
+      iaStatusEl.textContent = "IA: Indisponível";
+      iaStatusEl.classList.remove("is-ready", "is-missing");
+    }
+  }
+
+  async function salvarChaveIa() {
+    if (!iaApiKeyInput || !btnSalvarChave) return;
+    const chave = (iaApiKeyInput.value || "").trim();
+    if (!chave) {
+      showError("Informe a chave API do Nano Banana.", "ia");
+      iaApiKeyInput.focus();
+      return;
+    }
+
+    btnSalvarChave.disabled = true;
+    btnSalvarChave.textContent = "Salvando...";
+    try {
+      const res = await fetch("/api/config/ia", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ api_key: chave }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showError(data.erro || "Não foi possível salvar a chave API.", "ia");
+        return;
+      }
+      clearError();
+      iaApiKeyInput.value = "";
+      atualizarBadgeIa(Boolean(data.configurada));
+      if (iaConfigPanel) {
+        iaConfigPanel.hidden = true;
+      }
+    } catch {
+      showError("Erro de conexão ao salvar a chave API.", "ia");
+    } finally {
+      btnSalvarChave.disabled = false;
+      btnSalvarChave.textContent = "Salvar chave";
+    }
+  }
+
+  function updateAiBgButton(tipo) {
+    const row = document.querySelector(`.ai-bg-row[data-ai-row="${tipo}"]`);
+    const btn = document.querySelector(`.btn-remover-fundo[data-tipo="${tipo}"]`);
+    if (row) {
+      row.hidden = !state.uploaded[tipo];
+    }
+    if (btn) {
+      btn.disabled = state.aiBusy[tipo] || !state.uploaded[tipo];
+      const ativo = Boolean(state.fundoRemovido[tipo]);
+      btn.textContent = ativo ? "Restaurar original" : "Remover fundo (IA)";
+      btn.classList.toggle("is-active", ativo);
+    }
+  }
+
+  async function toggleRemoverFundo(tipo) {
+    if (state.aiBusy[tipo] || !state.uploaded[tipo]) {
+      return;
+    }
+    const usar = !state.fundoRemovido[tipo];
+    const reqSeq = state.uploadSeq[tipo];
+    const btn = document.querySelector(`.btn-remover-fundo[data-tipo="${tipo}"]`);
+    const dropzone = document.querySelector(`.dropzone[data-tipo="${tipo}"]`);
+    const thumbImg = dropzone ? dropzone.querySelector(".dropzone-thumb") : null;
+    const thumbWrap = dropzone ? dropzone.querySelector(".dropzone-thumb-wrap") : null;
+    const metaEl = dropzone ? dropzone.querySelector(".dropzone-meta") : null;
+
+    state.aiBusy[tipo] = true;
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = usar ? "Removendo fundo..." : "Restaurando...";
+    }
+
+    const controller = new AbortController();
+    const abortTimer = setTimeout(() => controller.abort(), 80000);
+
+    try {
+      const res = await fetch(`/api/imagem/${tipo}/remover-fundo`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ usar }),
+        signal: controller.signal,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (state.uploadSeq[tipo] !== reqSeq) {
+        return;
+      }
+      if (!res.ok) {
+        const msg = data.erro || "Erro ao processar fundo com IA.";
+        if (
+          (res.status === 400 && /chave|api/i.test(msg)) ||
+          /inválida|sem permissão/i.test(msg)
+        ) {
+          if (res.status === 400) {
+            atualizarBadgeIa(false);
+          }
+          if (iaConfigPanel) {
+            iaConfigPanel.hidden = false;
+          }
+        }
+        showError(msg, "ai");
+        return;
+      }
+
+      const dataUrl = `data:image/png;base64,${data.png}`;
+      let loadedPrintImg = null;
+      if (tipo === "print") {
+        loadedPrintImg = await loadHtmlImage(dataUrl);
+        if (state.uploadSeq[tipo] !== reqSeq) {
+          return;
+        }
+      }
+
+      if (state.objectUrls[tipo]) {
+        URL.revokeObjectURL(state.objectUrls[tipo]);
+        state.objectUrls[tipo] = null;
+      }
+      if (thumbImg) {
+        thumbImg.src = dataUrl;
+      }
+      if (thumbWrap) {
+        thumbWrap.hidden = false;
+      }
+
+      state.fundoRemovido[tipo] = Boolean(data.fundo_removido);
+      const nomeBase = state.fileName[tipo] || tipo;
+      const sufixo = state.fundoRemovido[tipo] ? " • sem fundo" : "";
+      const resumo = `${nomeBase} (${data.largura}×${data.altura}${sufixo})`;
+      state.metaText[tipo] = resumo;
+      if (metaEl) {
+        metaEl.textContent = resumo;
+        metaEl.title = resumo;
+      }
+
+      if (tipo === "print" && loadedPrintImg) {
+        state.drag = null;
+        state.printMeta = {
+          width: data.largura,
+          height: data.altura,
+          area: data.area,
+          initialRecorte: data.recorte,
+          image: loadedPrintImg,
+        };
+        state.crop = rectFromRecorte(data.recorte, data.largura, data.altura);
+        syncBlockStates();
+      }
+
+      clearError();
+      clearSaveStatus();
+      schedulePreview(true);
+    } catch (err) {
+      if (state.uploadSeq[tipo] === reqSeq) {
+        if (err && err.name === "AbortError") {
+          showError("Tempo limite excedido ao aguardar resposta da IA.", "ai");
+        } else {
+          showError("Erro de conexão ao remover fundo com IA.", "ai");
+        }
+      }
+    } finally {
+      clearTimeout(abortTimer);
+      if (state.uploadSeq[tipo] === reqSeq) {
+        state.aiBusy[tipo] = false;
+        updateAiBgButton(tipo);
+      }
+    }
+  }
+
   btnBaixar.addEventListener("click", salvarPng);
+
+  if (btnIaConfig && iaConfigPanel) {
+    btnIaConfig.addEventListener("click", () => {
+      iaConfigPanel.hidden = !iaConfigPanel.hidden;
+      if (!iaConfigPanel.hidden && iaApiKeyInput) {
+        iaApiKeyInput.focus();
+      }
+    });
+  }
+
+  if (btnSalvarChave) {
+    btnSalvarChave.addEventListener("click", salvarChaveIa);
+  }
+
+  if (iaApiKeyInput) {
+    iaApiKeyInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        salvarChaveIa();
+      }
+    });
+  }
+
+  for (const btn of document.querySelectorAll(".btn-remover-fundo")) {
+    btn.addEventListener("click", () => {
+      const tipo = btn.dataset.tipo;
+      if (tipo) {
+        toggleRemoverFundo(tipo);
+      }
+    });
+  }
 
   if (typeof ResizeObserver !== "undefined") {
     new ResizeObserver(() => layoutCropCanvas()).observe(cropCanvasWrap);
@@ -821,4 +1047,5 @@
   updateSubtitleCounter();
   updateRangeLabels();
   syncBlockStates();
+  carregarStatusIa();
 })();

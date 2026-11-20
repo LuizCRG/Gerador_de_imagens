@@ -1,6 +1,6 @@
 # Gerador de Anúncio Shopee
 
-Aplicativo local (offline, Windows) que monta a imagem principal `1024×1024` PNG para anúncios da Shopee sem alterar as fotos com IA — apenas recorte, remoção de fundo branco, ajuste de dimensões e posicionamento.
+Aplicativo local (Windows) que monta a imagem principal `1024×1024` PNG para anúncios da Shopee (offline por padrão, com opção sob demanda de remover fundos complexos via Nano Banana IA).
 
 ## Como abrir
 
@@ -11,10 +11,16 @@ Aplicativo local (offline, Windows) que monta a imagem principal `1024×1024` PN
 
 1. **Ative ou desative** cada bloco (`Carro`, `Peça`, `Título`, `Subtítulo`, `Print de aplicação` e `Etiqueta do print`). Blocos desativados não exigem envio e liberam espaço para os demais elementos.
 2. Envie as fotos dos blocos ativados (arrastando ou clicando).
-3. Preencha os textos e ajuste os **controles deslizantes de dimensões** (ou clique em **Restaurar padrões**).
-4. Se o print estiver ativo, arraste o retângulo `350:255` (ou redimensione pelo canto inferior direito) para enquadrar a região desejada.
-5. Confira a prévia ao vivo (`1024×1024`) e os avisos de ajuste automático, se houver.
-6. Clique em **Baixar PNG**.
+3. *(Opcional)* Clique em **Remover fundo (IA)** abaixo de qualquer foto enviada (`Carro`, `Peça` ou `Print`) para isolar o objeto em fundo branco usando o Nano Banana. É possível alternar de volta com **Restaurar original** a qualquer momento.
+4. Preencha os textos e ajuste os **controles deslizantes de dimensões** (ou clique em **Restaurar padrões**).
+5. Se o print estiver ativo, arraste o retângulo `350:255` (ou redimensione pelo canto inferior direito) para enquadrar a região desejada.
+6. Confira a prévia ao vivo (`1024×1024`) e os avisos de ajuste automático, se houver.
+7. Clique em **Baixar PNG**.
+
+## Remoção de fundo com Nano Banana (opcional)
+
+- Para usar o botão **Remover fundo (IA)**, defina `GEMINI_API_KEY=...` no arquivo `.env` (ignorado pelo git) na raiz do projeto ou clique em **Chave IA** no topo da tela para salvar a chave localmente.
+- Quando o indicador estiver verde (**`IA: Pronta`**), você pode remover e restaurar o fundo de qualquer imagem enviada.
 
 ## Onde os arquivos são salvos
 

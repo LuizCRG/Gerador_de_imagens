@@ -5,14 +5,16 @@ import io
 import math
 from pathlib import Path
 import re
+from typing import Callable
 import unicodedata
 
 from flask import Flask, Response, jsonify, request, send_file
 from PIL import Image, UnidentifiedImageError
 
 from anuncio.cartao import detectar_area_foto, normalizar_recorte
+from anuncio.ia_fundo import obter_chave_api, remover_fundo_ia, salvar_chave_api
 from anuncio.imagens import abrir_imagem
-from anuncio.layout import CARRO_LARG, ETIQ_TAM, PRINT_TAM, SUB_TAM, TITULO_TAM
+from anuncio.layout import CARRO_LARG, ETIQ_TAM, PRINT_TAM, RAIZ_PROJETO, SUB_TAM, TITULO_TAM
 from anuncio.montar import Entrada, Resultado, montar
 
 _TIPOS_IMAGEM = frozenset({"carro", "peca", "print"})
@@ -144,16 +146,31 @@ def _montar_da_requisicao(imagens: dict[str, Image.Image]) -> tuple[Resultado, s
     return montar(entrada), (titulo if usar_titulo else "")
 
 
-def criar_app(pasta_saida: Path = Path("saida")) -> Flask:
+def _imagem_para_b64(img: Image.Image) -> str:
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode("ascii")
+
+
+def criar_app(
+    pasta_saida: Path = Path("saida"),
+    removedor_fundo: Callable[..., Image.Image] = remover_fundo_ia,
+    env_path: Path | None = None,
+) -> Flask:
     """Cria e configura a aplicação Flask com estado em memória e pasta de saída."""
     pasta_estatica = Path(__file__).resolve().parent / "static"
     app = Flask(__name__, static_folder=str(pasta_estatica))
     app.config["IMAGENS"] = {}
+    app.config["IMAGENS_ORIGINAIS"] = {}
+    app.config["IMAGENS_SEM_FUNDO"] = {}
     pasta_destino = Path(pasta_saida)
+    caminho_env = (RAIZ_PROJETO / ".env") if env_path is None else Path(env_path)
 
     @app.get("/")
     def index() -> Response:
         app.config["IMAGENS"].clear()
+        app.config["IMAGENS_ORIGINAIS"].clear()
+        app.config["IMAGENS_SEM_FUNDO"].clear()
         return app.send_static_file("index.html")
 
     @app.post("/api/imagem/<tipo>")
@@ -176,6 +193,8 @@ def criar_app(pasta_saida: Path = Path("saida")) -> Flask:
         except (UnidentifiedImageError, OSError, ValueError):
             return _erro("Arquivo de imagem inválido ou ilegível")
 
+        app.config["IMAGENS_ORIGINAIS"][tipo] = img
+        app.config["IMAGENS_SEM_FUNDO"].pop(tipo, None)
         app.config["IMAGENS"][tipo] = img
         resposta: dict[str, object] = {"largura": img.width, "altura": img.height}
         if tipo == "print":
@@ -185,6 +204,68 @@ def criar_app(pasta_saida: Path = Path("saida")) -> Flask:
             resposta["recorte"] = list(recorte)
         return jsonify(resposta)
 
+    @app.post("/api/imagem/<tipo>/remover-fundo")
+    def remover_fundo_rota(tipo: str) -> tuple[Response, int] | Response:
+        if tipo not in _TIPOS_IMAGEM:
+            return _erro("Tipo de imagem inválido", 404)
+
+        original = app.config["IMAGENS_ORIGINAIS"].get(tipo)
+        if original is None:
+            return _erro("Envie a imagem antes de remover o fundo")
+
+        dados = request.get_json(silent=True)
+        if dados is not None and not isinstance(dados, dict):
+            return _erro("Corpo JSON inválido")
+        try:
+            usar = _parse_bool(dados or {}, "usar", True)
+        except ValueError as exc:
+            return _erro(str(exc))
+
+        if not usar:
+            ativa = original
+            fundo_removido = False
+        else:
+            em_cache = app.config["IMAGENS_SEM_FUNDO"].get(tipo)
+            if em_cache is None:
+                try:
+                    em_cache = removedor_fundo(original, tipo=tipo, env_path=caminho_env)
+                except ValueError as exc:
+                    return _erro(str(exc))
+                except RuntimeError as exc:
+                    return _erro(str(exc), 502)
+                app.config["IMAGENS_SEM_FUNDO"][tipo] = em_cache
+            ativa = em_cache
+            fundo_removido = True
+
+        app.config["IMAGENS"][tipo] = ativa
+        resposta: dict[str, object] = {
+            "png": _imagem_para_b64(ativa),
+            "largura": ativa.width,
+            "altura": ativa.height,
+            "fundo_removido": fundo_removido,
+        }
+        if tipo == "print":
+            area = detectar_area_foto(ativa)
+            recorte = normalizar_recorte(None, ativa.size, area)
+            resposta["area"] = list(area)
+            resposta["recorte"] = list(recorte)
+        return jsonify(resposta)
+
+    @app.get("/api/config/ia")
+    def status_config_ia() -> Response:
+        return jsonify({"configurada": bool(obter_chave_api(env_path=caminho_env))})
+
+    @app.post("/api/config/ia")
+    def salvar_config_ia() -> tuple[Response, int] | Response:
+        dados = request.get_json(silent=True)
+        if not isinstance(dados, dict) or not isinstance(dados.get("api_key"), str):
+            return _erro("Informe uma chave de API válida")
+        try:
+            salvar_chave_api(dados["api_key"], env_path=caminho_env)
+        except ValueError as exc:
+            return _erro(str(exc))
+        return jsonify({"configurada": True})
+
     @app.post("/api/previa")
     def previa() -> tuple[Response, int] | Response:
         try:
@@ -192,11 +273,8 @@ def criar_app(pasta_saida: Path = Path("saida")) -> Flask:
         except ValueError as exc:
             return _erro(str(exc))
 
-        buf = io.BytesIO()
-        resultado.imagem.save(buf, format="PNG")
-        png_b64 = base64.b64encode(buf.getvalue()).decode("ascii")
         return jsonify({
-            "png": png_b64,
+            "png": _imagem_para_b64(resultado.imagem),
             "avisos": resultado.avisos,
             "recorte_print": (
                 list(resultado.recorte_print) if resultado.recorte_print is not None else None

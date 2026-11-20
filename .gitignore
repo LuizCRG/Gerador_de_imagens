@@ -4,3 +4,4 @@ saida/
 .pytest_cache/
 .worktrees/
 .superpowers/
+.env
