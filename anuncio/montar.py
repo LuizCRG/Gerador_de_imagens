@@ -48,6 +48,12 @@ _SUB_MIN_CORRECAO = 26
 _SUB_PASSO = 2
 _ESCALA_MIN = 0.5
 _ESCALA_PASSO = 0.03
+_PROBLEMAS_PECA = frozenset({
+    "titulo_x_peca",
+    "sub_x_peca",
+    "carro_x_peca",
+    "cartao_x_peca",
+})
 
 
 @dataclass
@@ -188,15 +194,26 @@ def _proximo_ajuste(
     tam_t: int,
     tam_s: int,
     escala: float,
+    mascara_peca: np.ndarray,
+    m_titulo: np.ndarray,
+    m_sub: np.ndarray,
 ) -> tuple[int, int, float, bool]:
     sub_colide = "sub_x_peca" in problemas or "sub_x_etiqueta" in problemas
-    if "titulo_x_peca" in problemas and tam_t > _TITULO_MIN_CORRECAO:
+    fora = "fora_do_canvas" in problemas
+    peca_envolvida = any(p in _PROBLEMAS_PECA for p in problemas) or (
+        fora and _toca_borda(mascara_peca)
+    )
+
+    if (
+        ("titulo_x_peca" in problemas or (fora and _toca_borda(m_titulo)))
+        and tam_t > _TITULO_MIN_CORRECAO
+    ):
         return max(_TITULO_MIN_CORRECAO, tam_t - _TITULO_PASSO), tam_s, escala, True
     if sub_colide and tam_t > _TITULO_MIN_CORRECAO:
         return max(_TITULO_MIN_CORRECAO, tam_t - _TITULO_PASSO), tam_s, escala, True
-    if sub_colide and tam_s > _SUB_MIN_CORRECAO:
+    if (sub_colide or (fora and _toca_borda(m_sub))) and tam_s > _SUB_MIN_CORRECAO:
         return tam_t, max(_SUB_MIN_CORRECAO, tam_s - _SUB_PASSO), escala, True
-    if escala > _ESCALA_MIN:
+    if peca_envolvida and escala > _ESCALA_MIN:
         return tam_t, tam_s, max(_ESCALA_MIN, round(escala - _ESCALA_PASSO, 4)), True
     return tam_t, tam_s, escala, False
 
@@ -241,7 +258,7 @@ def montar(e: Entrada) -> Resultado:
     textos: Textos | None = None
     problemas: list[str] = []
 
-    def _avaliar() -> tuple[Textos, list[str]]:
+    def _avaliar() -> tuple[Textos, list[str], np.ndarray, np.ndarray]:
         nonlocal escala_cache, peca_encaixada, pos_peca, mascara_peca, tam_t, tam_s
         if escala != escala_cache:
             peca_encaixada, pos_peca = encaixar_peca(peca_sem_fundo, escala=escala)
@@ -265,17 +282,25 @@ def montar(e: Entrada) -> Resultado:
             caixa_cartao,
             caixa_etiqueta,
         )
-        return t, probs
+        return t, probs, m_titulo, m_sub
 
     for _ in range(_MAX_ITER):
-        textos, problemas = _avaliar()
+        textos, problemas, m_titulo, m_sub = _avaliar()
         if not problemas:
             break
-        tam_t, tam_s, escala, ajustou = _proximo_ajuste(problemas, tam_t, tam_s, escala)
+        tam_t, tam_s, escala, ajustou = _proximo_ajuste(
+            problemas,
+            tam_t,
+            tam_s,
+            escala,
+            mascara_peca,
+            m_titulo,
+            m_sub,
+        )
         if not ajustou:
             break
     else:
-        textos, problemas = _avaliar()
+        textos, problemas, _, _ = _avaliar()
 
     assert peca_encaixada is not None and textos is not None
     canvas = fundo_radial().convert("RGBA")

@@ -21,7 +21,7 @@ from anuncio.layout import (
     SUB_TAM,
     TITULO_TAM,
 )
-from anuncio.montar import Entrada, Resultado, montar, verificar
+from anuncio.montar import Entrada, Resultado, _proximo_ajuste, montar, verificar
 from anuncio.textos import mascara_textos, posicionar_textos
 
 
@@ -212,6 +212,50 @@ def test_aviso_nao_foi_possivel_eliminar(img_carro, img_peca, img_print):
         )
     )
 
+    assert r.escala_peca == 1.0
+    assert r.tam_titulo == TITULO_TAM
+    assert r.tam_sub == SUB_TAM
+    assert r.avisos == ["Não foi possível eliminar: fora_do_canvas"]
+    assert not any("Peça reduzida" in a for a in r.avisos)
+
+
+def _peca_sem_tinta_no_meio() -> Image.Image:
+    im = Image.new("RGBA", (100, 1000), (0, 0, 0, 0))
+    im.paste((0, 0, 0, 255), (0, 0, 100, 150))
+    im.paste((0, 0, 0, 255), (0, 850, 100, 1000))
+    return im
+
+
+def test_fora_do_canvas_subtitulo_corrige_sem_reduzir_peca(img_carro, img_print):
+    r = montar(
+        _entradas_padrao(
+            img_carro,
+            _peca_sem_tinta_no_meio(),
+            img_print,
+            subtitulo=["COMPATÍVEL COM TODAS AS VERSÕES DO MODELO NOVO"],
+        )
+    )
+
+    assert r.escala_peca == 1.0
+    assert r.tam_titulo == TITULO_TAM
+    assert r.tam_sub < SUB_TAM
+    assert not any("Peça reduzida" in a for a in r.avisos)
+    assert not any("Não foi possível" in a for a in r.avisos)
+
+
+def test_fora_do_canvas_subtitulo_extremo_nao_reduz_peca(img_carro, img_print):
+    r = montar(
+        _entradas_padrao(
+            img_carro,
+            _peca_sem_tinta_no_meio(),
+            img_print,
+            subtitulo=["W" * 50],
+        )
+    )
+
+    assert r.escala_peca == 1.0
+    assert r.tam_sub == 26
+    assert not any("Peça reduzida" in a for a in r.avisos)
     assert "Não foi possível eliminar: fora_do_canvas" in r.avisos
 
 
@@ -237,3 +281,22 @@ def test_composicao_ordem_etiqueta_sobre_cartao(img_carro, img_peca, img_print):
     temp = Image.new("RGB", (CANVAS, CANVAS), (255, 255, 255))
     box = desenhar_etiqueta(temp, "aplicação na porta")
     assert r.imagem.getpixel((box[0] + 10, box[1] + 23)) == ETIQ_COR
+
+
+def test_proximo_ajuste_guarda_escala_peca():
+    vazia = np.zeros((CANVAS, CANVAS), dtype=bool)
+    assert _proximo_ajuste(["sub_x_etiqueta"], 72, 26, 1.0, vazia, vazia, vazia) == (
+        72,
+        26,
+        1.0,
+        False,
+    )
+
+    m_peca_borda = vazia.copy()
+    m_peca_borda[500, CANVAS - 1] = True
+    assert _proximo_ajuste(["fora_do_canvas"], 132, 40, 1.0, m_peca_borda, vazia, vazia) == (
+        132,
+        40,
+        0.97,
+        True,
+    )
