@@ -4,12 +4,15 @@ import io
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageFilter, ImageOps
+from PIL import Image, ImageChops, ImageFilter, ImageOps
 from scipy.ndimage import maximum_filter
 
 from anuncio.layout import (
     CAIXA_PECA,
     CANVAS,
+    CARRO_ALT_MAX,
+    CARRO_LARG,
+    CARRO_MARGEM,
     FUNDO_CENTRO,
     FUNDO_COR_BORDA,
     FUNDO_COR_CENTRO,
@@ -20,6 +23,7 @@ from anuncio.layout import (
 _BRANCO_ALFA_CORTE = 250
 _LUMINANCIA_OPACA = 215.0
 _LUMINANCIA_TRANSP = 247.0
+_CARRO_LIMIAR_BRANCO = 245
 
 
 def fundo_radial() -> Image.Image:
@@ -119,3 +123,50 @@ def compor_peca(canvas: Image.Image, peca: Image.Image, pos: tuple[int, int]) ->
         canvas.alpha_composite(camada)
 
     canvas.alpha_composite(peca_rgba, dest=pos)
+
+
+def recortar_carro(img: Image.Image) -> Image.Image:
+    """Recorta o carro ao bbox não-branco com margem e redimensiona para CARRO_LARG x CARRO_ALT_MAX."""
+    if img.has_transparency_data:
+        rgba = img.convert("RGBA")
+        fundo_branco = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
+        rgb = Image.alpha_composite(fundo_branco, rgba).convert("RGB")
+    elif img.mode != "RGB":
+        rgb = img.convert("RGB")
+    else:
+        rgb = img
+
+    arr = np.asarray(rgb)
+    ys, xs = np.where(arr.min(axis=2) < _CARRO_LIMIAR_BRANCO)
+    if xs.size == 0:
+        recorte = rgb
+    else:
+        x0 = max(0, int(xs.min()) - CARRO_MARGEM)
+        y0 = max(0, int(ys.min()) - CARRO_MARGEM)
+        x1 = min(rgb.width, int(xs.max()) + 1 + CARRO_MARGEM)
+        y1 = min(rgb.height, int(ys.max()) + 1 + CARRO_MARGEM)
+        recorte = rgb.crop((x0, y0, x1, y1))
+
+    crop_w, crop_h = recorte.size
+    nova_w = CARRO_LARG
+    nova_h = max(1, round(crop_h * CARRO_LARG / crop_w))
+    if nova_h > CARRO_ALT_MAX:
+        nova_h = CARRO_ALT_MAX
+        nova_w = max(1, round(crop_w * CARRO_ALT_MAX / crop_h))
+    return recorte.resize((nova_w, nova_h), Image.Resampling.LANCZOS)
+
+
+def aplicar_multiply(
+    canvas: Image.Image,
+    img: Image.Image,
+    pos: tuple[int, int],
+) -> tuple[int, int, int, int]:
+    """Compõe a imagem sobre o canvas com blend multiply e devolve a caixa (x0, y0, x1, y1)."""
+    x0, y0 = pos
+    x1 = x0 + img.width
+    y1 = y0 + img.height
+    regiao_rgb = canvas.crop((x0, y0, x1, y1)).convert("RGB")
+    img_rgb = img if img.mode == "RGB" else img.convert("RGB")
+    multiplicada = ImageChops.multiply(regiao_rgb, img_rgb)
+    canvas.paste(multiplicada, pos)
+    return (x0, y0, x1, y1)
