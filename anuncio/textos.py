@@ -122,39 +122,48 @@ def posicionar_textos(
     subtitulo: list[str],
     tam_titulo: int = TITULO_TAM,
     tam_sub: int = SUB_TAM,
+    usar_titulo: bool = True,
+    usar_subtitulo: bool = True,
+    larg_max_titulo: int = TITULO_LARG_MAX,
 ) -> Textos:
     """Calcula quebras, redução de fonte do título e baselines de título e subtítulo."""
-    if not titulo.strip():
-        raise ValueError("Título obrigatório")
-
-    linhas_sub = [linha.strip().upper() for linha in subtitulo if linha.strip()]
-    if len(linhas_sub) > _SUB_MAX_LINHAS:
-        raise ValueError("Subtítulo tem mais de 3 linhas")
-
+    linhas_titulo: list[str] = []
+    baselines_titulo: list[int] = []
     tam_atual = tam_titulo
-    fonte_titulo = _carregar_fonte(FONTE_BLACK, tam_atual)
-    linhas_titulo = quebrar_titulo(titulo, fonte_titulo)
 
-    while (
-        tam_atual > _TITULO_TAM_MIN
-        and max(fonte_titulo.getlength(linha) for linha in linhas_titulo) > TITULO_LARG_MAX
-    ):
-        tam_atual = max(_TITULO_TAM_MIN, tam_atual - _TITULO_PASSO)
+    if usar_titulo:
+        if not titulo.strip():
+            raise ValueError("Título obrigatório")
+
         fonte_titulo = _carregar_fonte(FONTE_BLACK, tam_atual)
+        linhas_titulo = quebrar_titulo(titulo, fonte_titulo)
 
-    s_t = tam_atual / TITULO_TAM
-    b1 = round(base_carro + TITULO_DESLOC * s_t)
-    baselines_titulo = [b1]
-    if len(linhas_titulo) == 2:
-        baselines_titulo.append(round(b1 + TITULO_ENTRELINHA * s_t))
+        while (
+            tam_atual > _TITULO_TAM_MIN
+            and max(fonte_titulo.getlength(linha) for linha in linhas_titulo) > larg_max_titulo
+        ):
+            tam_atual = max(_TITULO_TAM_MIN, tam_atual - _TITULO_PASSO)
+            fonte_titulo = _carregar_fonte(FONTE_BLACK, tam_atual)
 
+        s_t = tam_atual / TITULO_TAM
+        b1 = round(base_carro + TITULO_DESLOC * s_t)
+        baselines_titulo = [b1]
+        if len(linhas_titulo) == 2:
+            baselines_titulo.append(round(b1 + TITULO_ENTRELINHA * s_t))
+
+    linhas_sub: list[str] = []
     baselines_sub: list[int] = []
-    if linhas_sub:
-        s_s = tam_sub / SUB_TAM
-        sb0 = round(baselines_titulo[-1] + SUB_DESLOC * s_s)
-        baselines_sub = [
-            round(sb0 + i * SUB_ENTRELINHA * s_s) for i in range(len(linhas_sub))
-        ]
+    if usar_subtitulo:
+        linhas_sub = [linha.strip().upper() for linha in subtitulo if linha.strip()]
+        if len(linhas_sub) > _SUB_MAX_LINHAS:
+            raise ValueError("Subtítulo tem mais de 3 linhas")
+        if linhas_sub:
+            s_s = tam_sub / SUB_TAM
+            ancora_y = baselines_titulo[-1] if baselines_titulo else base_carro
+            sb0 = round(ancora_y + SUB_DESLOC * s_s)
+            baselines_sub = [
+                round(sb0 + i * SUB_ENTRELINHA * s_s) for i in range(len(linhas_sub))
+            ]
 
     return Textos(
         linhas_titulo=linhas_titulo,

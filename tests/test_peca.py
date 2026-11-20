@@ -60,22 +60,32 @@ def test_encaixar_escala(img_peca):
     assert p.height == 900
 
 
-def test_glow_azul_perto_da_peca(img_peca):
-    peca, pos = encaixar_peca(remover_fundo_branco(img_peca))
-    canvas = fundo_radial().convert("RGBA")
-    compor_peca(canvas, peca, pos)
-
-    r, _, b, _ = canvas.getpixel((pos[0] - 10, pos[1] + peca.height - 50))
-    assert b > r + 15
-
-
-def test_glow_some_longe(img_peca):
+def test_compor_peca_sem_glow_azul(img_peca):
     fundo = fundo_radial()
     peca, pos = encaixar_peca(remover_fundo_branco(img_peca))
     canvas = fundo.convert("RGBA")
     compor_peca(canvas, peca, pos)
 
+    fora = (pos[0] - 10, pos[1] + peca.height - 50)
+    assert canvas.getpixel(fora)[:3] == fundo.getpixel(fora)
     assert canvas.getpixel((100, 100))[:3] == fundo.getpixel((100, 100))
+    assert canvas.getpixel((pos[0] + 10, pos[1] + peca.height - 50))[:3] == (0, 0, 0)
+
+
+def test_encaixar_caixa_personalizada(img_peca):
+    rgba = remover_fundo_branco(img_peca)
+    p, (x, y) = encaixar_peca(rgba, caixa=(24, 24, 1000, 1000))
+    assert p.height == 976
+    assert 24 <= x and x + p.width <= 1000
+    assert y == 24
+
+
+def test_encaixar_escala_maior_clamp():
+    quad = Image.new("RGBA", (200, 200), (0, 0, 0, 255))
+    p, (x, y) = encaixar_peca(quad, escala=1.6, caixa=(420, 12, 1000, 1012))
+    assert p.width == round(580 * 1.6)
+    assert x >= 12 and x + p.width <= 1012
+    assert y >= 12 and y + p.height <= 1012
 
 
 def test_exif_rotacao(tmp_path):

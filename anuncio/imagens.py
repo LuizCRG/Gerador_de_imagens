@@ -5,7 +5,6 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageChops, ImageFilter, ImageOps
-from scipy.ndimage import maximum_filter
 
 from anuncio.layout import (
     CAIXA_PECA,
@@ -17,7 +16,6 @@ from anuncio.layout import (
     FUNDO_COR_BORDA,
     FUNDO_COR_CENTRO,
     FUNDO_RAIO,
-    GLOW,
 )
 
 _BRANCO_ALFA_CORTE = 250
@@ -78,10 +76,14 @@ def remover_fundo_branco(img: Image.Image) -> Image.Image:
     return Image.fromarray(saida, mode="RGBA")
 
 
-def encaixar_peca(peca: Image.Image, escala: float = 1.0) -> tuple[Image.Image, tuple[int, int]]:
-    """Recorta a peça ao bbox do alfa e redimensiona proporcionalmente para caber em CAIXA_PECA * escala."""
+def encaixar_peca(
+    peca: Image.Image,
+    escala: float = 1.0,
+    caixa: tuple[int, int, int, int] = CAIXA_PECA,
+) -> tuple[Image.Image, tuple[int, int]]:
+    """Recorta a peça ao bbox do alfa e redimensiona proporcionalmente para caber em caixa * escala."""
     rgba = peca if peca.mode == "RGBA" else peca.convert("RGBA")
-    x0, y0, x1, y1 = CAIXA_PECA
+    x0, y0, x1, y1 = caixa
     caixa_w = x1 - x0
     caixa_h = y1 - y0
 
@@ -100,33 +102,29 @@ def encaixar_peca(peca: Image.Image, escala: float = 1.0) -> tuple[Image.Image, 
     redimensionada = recortada.resize((nova_w, nova_h), Image.Resampling.LANCZOS)
     pos_x = x0 + (caixa_w - nova_w) // 2
     pos_y = y0 + (caixa_h - nova_h) // 2
+    margem = 12
+    if nova_w > caixa_w and nova_w <= CANVAS - 2 * margem:
+        pos_x = max(margem, min(pos_x, CANVAS - margem - nova_w))
+    if nova_h > caixa_h and nova_h <= CANVAS - 2 * margem:
+        pos_y = max(margem, min(pos_y, CANVAS - margem - nova_h))
     return redimensionada, (pos_x, pos_y)
 
 
 def compor_peca(canvas: Image.Image, peca: Image.Image, pos: tuple[int, int]) -> None:
-    """Compõe o glow em 3 camadas e a peça no canvas RGBA em memória (in-place)."""
+    """Compõe a peça RGBA no canvas RGBA em memória (in-place), sem glow."""
     if canvas.mode != "RGBA":
         raise ValueError(f"canvas deve estar no modo RGBA, recebido: {canvas.mode}")
 
     peca_rgba = peca if peca.mode == "RGBA" else peca.convert("RGBA")
-    mascara_base = Image.new("L", canvas.size, 0)
-    mascara_base.paste(peca_rgba.getchannel("A"), pos)
-    alfa_base = np.asarray(mascara_base)
-
-    for cor, dilat, blur, opac in GLOW:
-        dilatada = maximum_filter(alfa_base, size=dilat, mode="constant", cval=0)
-        borrada = Image.fromarray(dilatada, mode="L").filter(ImageFilter.GaussianBlur(blur))
-        alfa_camada = np.rint(np.asarray(borrada, dtype=np.float64) * opac).astype(np.uint8)
-
-        camada = Image.new("RGBA", canvas.size, (*cor, 0))
-        camada.putalpha(Image.fromarray(alfa_camada, mode="L"))
-        canvas.alpha_composite(camada)
-
     canvas.alpha_composite(peca_rgba, dest=pos)
 
 
-def recortar_carro(img: Image.Image) -> Image.Image:
-    """Recorta o carro ao bbox não-branco com margem e redimensiona para CARRO_LARG x CARRO_ALT_MAX."""
+def recortar_carro(
+    img: Image.Image,
+    largura: int = CARRO_LARG,
+    altura_max: int = CARRO_ALT_MAX,
+) -> Image.Image:
+    """Recorta o carro ao bbox não-branco com margem e redimensiona para largura x altura_max."""
     if img.has_transparency_data:
         rgba = img.convert("RGBA")
         fundo_branco = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
@@ -148,11 +146,11 @@ def recortar_carro(img: Image.Image) -> Image.Image:
         recorte = rgb.crop((x0, y0, x1, y1))
 
     crop_w, crop_h = recorte.size
-    nova_w = CARRO_LARG
-    nova_h = max(1, round(crop_h * CARRO_LARG / crop_w))
-    if nova_h > CARRO_ALT_MAX:
-        nova_h = CARRO_ALT_MAX
-        nova_w = max(1, round(crop_w * CARRO_ALT_MAX / crop_h))
+    nova_w = max(1, int(largura))
+    nova_h = max(1, round(crop_h * nova_w / crop_w))
+    if nova_h > altura_max:
+        nova_h = max(1, int(altura_max))
+        nova_w = max(1, round(crop_w * nova_h / crop_h))
     return recorte.resize((nova_w, nova_h), Image.Resampling.LANCZOS)
 
 

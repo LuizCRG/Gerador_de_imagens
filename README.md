@@ -1,35 +1,21 @@
 # Gerador de Anúncio Shopee
 
-Ferramenta local (offline) para gerar imagens principais de anúncio em **1024 × 1024 px** (PNG RGB).
+Aplicativo local (offline, Windows) que monta a imagem principal `1024×1024` PNG para anúncios da Shopee sem alterar as fotos com IA — apenas recorte, remoção de fundo branco, ajuste de dimensões e posicionamento.
 
-## Como iniciar
+## Como abrir
 
-### Pelo atalho (Windows)
-Dê um duplo clique em `abrir.bat`. Ele abre o navegador em `http://127.0.0.1:5000` e inicia o servidor local.
-
-### Pelo terminal
-```bat
-python app.py
-```
-Em seguida, abra `http://127.0.0.1:5000` no navegador.
+1. Dê um duplo clique em **`abrir.bat`** (ou execute `python app.py` no terminal).
+2. O navegador abrirá **`http://127.0.0.1:5000`**.
 
 ## Como usar
 
-1. Envie as **3 fotos** na coluna esquerda (arrastando e soltando ou clicando nas áreas): **Carro**, **Peça** e **Print**.
-2. Preencha o **Título**, o **Subtítulo** (até 3 linhas, uma por linha) e a **Etiqueta do print**.
-3. Ajuste o **Recorte do print** na proporção fixa `350:255`:
-   - Arraste o interior do retângulo para mover.
-   - Arraste a alça azul no canto inferior direito para redimensionar dentro da imagem.
-   - Use **Centralizar recorte** caso queira voltar à seleção inicial sugerida.
-4. Confira a prévia 1024 × 1024 na coluna direita e os eventuais avisos de ajuste abaixo dela.
-5. Clique em **Baixar PNG** para baixar a imagem gerada.
+1. **Ative ou desative** cada bloco (`Carro`, `Peça`, `Título`, `Subtítulo`, `Print de aplicação` e `Etiqueta do print`). Blocos desativados não exigem envio e liberam espaço para os demais elementos.
+2. Envie as fotos dos blocos ativados (arrastando ou clicando).
+3. Preencha os textos e ajuste os **controles deslizantes de dimensões** (ou clique em **Restaurar padrões**).
+4. Se o print estiver ativo, arraste o retângulo `350:255` (ou redimensione pelo canto inferior direito) para enquadrar a região desejada.
+5. Confira a prévia ao vivo (`1024×1024`) e os avisos de ajuste automático, se houver.
+6. Clique em **Baixar PNG**.
 
-## Onde os PNGs são salvos
+## Onde os arquivos são salvos
 
-Além do download pelo navegador, cada arquivo exportado é gravado automaticamente na pasta `saida/` com o nome baseado no título (por exemplo, `saida/puxador-de-porta.png`). Se já existir um arquivo com o mesmo nome, é adicionado um sufixo numérico (`-2`, `-3`, etc.) sem sobrescrever o anterior.
-
-## Testes
-
-```bat
-python -m pytest -q
-```
+- Cada download salva uma cópia automática em `saida/<nome-do-titulo>.png` (ou `saida/anuncio.png` se o título estiver desativado), acrescentando `-2`, `-3`, etc. quando já existir arquivo com o mesmo nome.

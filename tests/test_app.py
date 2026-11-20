@@ -269,7 +269,25 @@ def test_pagina_inicial(client):
     assert "/static/style.css" in html
     assert "/static/app.js" in html
     assert "Baixar PNG" in html
-    for marcador in ('data-tipo="carro"', 'data-tipo="peca"', 'data-tipo="print"', 'id="crop-canvas"'):
+    for marcador in (
+        'data-tipo="carro"',
+        'data-tipo="peca"',
+        'data-tipo="print"',
+        'id="crop-canvas"',
+        'id="usar-carro"',
+        'id="usar-peca"',
+        'id="usar-print"',
+        'id="usar-etiqueta"',
+        'id="usar-titulo"',
+        'id="usar-subtitulo"',
+        'id="largura-carro"',
+        'id="escala-peca"',
+        'id="largura-print"',
+        'id="tam-titulo"',
+        'id="tam-sub"',
+        'id="tam-etiqueta"',
+        'id="btn-restaurar-tamanhos"',
+    ):
         assert marcador in html
 
 
@@ -302,5 +320,78 @@ def test_ativos_estaticos_e_offline(client):
         conteudo = r.get_data(as_text=True).lower()
         assert "http://" not in conteudo
         assert "https://" not in conteudo
+
+
+def test_previa_sem_print_e_sem_carro_nao_exige_fotos_desativadas(client, img_peca):
+    client.post("/api/imagem/peca", data={"arquivo": _para_upload(img_peca)})
+    r = client.post(
+        "/api/previa",
+        json={
+            "titulo": "Puxador de Porta",
+            "subtitulo": ["Linha 1"],
+            "etiqueta": "",
+            "recorte_print": None,
+            "usar_carro": False,
+            "usar_print": False,
+            "usar_etiqueta": False,
+            "escala_peca": 0.9,
+            "tam_titulo": 110,
+            "tam_sub": 36,
+        },
+    )
+    assert r.status_code == 200
+    assert r.json["recorte_print"] is None
+    assert r.json["avisos"] == []
+
+
+def test_previa_sem_titulo_permite_titulo_vazio_e_salvar_usa_anuncio(client, tmp_path, img_peca):
+    client.post("/api/imagem/peca", data={"arquivo": _para_upload(img_peca)})
+    r = client.post(
+        "/api/salvar",
+        json={
+            "titulo": "",
+            "subtitulo": [],
+            "etiqueta": "",
+            "recorte_print": None,
+            "usar_carro": False,
+            "usar_print": False,
+            "usar_titulo": False,
+            "usar_subtitulo": False,
+        },
+    )
+    assert r.status_code == 200
+    assert (tmp_path / "anuncio.png").exists()
+
+
+def test_previa_dimensoes_invalidas_retorna_400(client, img_peca):
+    client.post("/api/imagem/peca", data={"arquivo": _para_upload(img_peca)})
+    r = client.post(
+        "/api/previa",
+        json={
+            "titulo": "Teste",
+            "subtitulo": [],
+            "etiqueta": "",
+            "recorte_print": None,
+            "usar_carro": "sim",
+            "usar_print": False,
+        },
+    )
+    assert r.status_code == 400
+    assert "usar_carro" in r.json["erro"].lower()
+
+    r2 = client.post(
+        "/api/previa",
+        json={
+            "titulo": "Teste",
+            "subtitulo": [],
+            "etiqueta": "",
+            "recorte_print": None,
+            "usar_carro": False,
+            "usar_print": False,
+            "tam_titulo": 9999,
+        },
+    )
+    assert r2.status_code == 400
+    assert "tam_titulo" in r2.json["erro"].lower()
 
 

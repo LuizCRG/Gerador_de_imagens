@@ -144,3 +144,18 @@ def test_cartao_e_etiqueta_canvas_rgba(img_print):
     assert cv_rgba.mode == "RGBA"
     assert cv_rgba.getpixel((44, 847))[:3] == (255, 255, 255)
     assert cv_rgba.getpixel((74, 712))[:3] == ETIQ_COR
+
+
+def test_desenhar_cartao_largura_personalizada(img_print):
+    cv = fundo_radial()
+    recorte = normalizar_recorte(None, img_print.size, detectar_area_foto(img_print))
+    box = desenhar_cartao(cv, img_print, recorte, largura=420)
+    esp_ph = round(420 * 255 / 350)
+    assert box == (40, 983 - (esp_ph + 16), 40 + 420 + 16, 983)
+
+
+def test_desenhar_etiqueta_tamanho_e_posicao():
+    cv = fundo_radial()
+    box = desenhar_etiqueta(cv, "porta", tam_fonte=30, pos=(62, 632))
+    assert box[0] == 62 and box[1] == 632
+    assert box[3] - box[1] == round(ETIQ_ALT * 30 / 24)

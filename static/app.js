@@ -7,6 +7,15 @@
   const HANDLE_SIZE = 14;
   const DEFAULT_META = "Arraste ou clique";
 
+  const DEFAULTS = {
+    larguraCarro: 500,
+    escalaPecaPct: 100,
+    larguraPrint: 350,
+    tamTitulo: 132,
+    tamSub: 40,
+    tamEtiqueta: 24,
+  };
+
   const state = {
     uploaded: { carro: false, peca: false, print: false },
     metaText: { carro: DEFAULT_META, peca: DEFAULT_META, print: DEFAULT_META },
@@ -22,6 +31,28 @@
     isSaving: false,
     errorSource: null,
   };
+
+  const usarCarroInput = document.getElementById("usar-carro");
+  const usarPecaInput = document.getElementById("usar-peca");
+  const usarPrintInput = document.getElementById("usar-print");
+  const usarEtiquetaInput = document.getElementById("usar-etiqueta");
+  const usarTituloInput = document.getElementById("usar-titulo");
+  const usarSubtituloInput = document.getElementById("usar-subtitulo");
+
+  const larguraCarroInput = document.getElementById("largura-carro");
+  const escalaPecaInput = document.getElementById("escala-peca");
+  const larguraPrintInput = document.getElementById("largura-print");
+  const tamTituloInput = document.getElementById("tam-titulo");
+  const tamSubInput = document.getElementById("tam-sub");
+  const tamEtiquetaInput = document.getElementById("tam-etiqueta");
+
+  const valLarguraCarro = document.getElementById("val-largura-carro");
+  const valEscalaPeca = document.getElementById("val-escala-peca");
+  const valLarguraPrint = document.getElementById("val-largura-print");
+  const valTamTitulo = document.getElementById("val-tam-titulo");
+  const valTamSub = document.getElementById("val-tam-sub");
+  const valTamEtiqueta = document.getElementById("val-tam-etiqueta");
+  const btnRestaurarTamanhos = document.getElementById("btn-restaurar-tamanhos");
 
   const tituloInput = document.getElementById("titulo");
   const subtituloInput = document.getElementById("subtitulo");
@@ -63,8 +94,68 @@
     statusSalvar.textContent = "";
   }
 
-  function allPhotosUploaded() {
-    return state.uploaded.carro && state.uploaded.peca && state.uploaded.print;
+  function anyElementActive() {
+    return (
+      usarCarroInput.checked ||
+      usarPecaInput.checked ||
+      usarPrintInput.checked ||
+      usarTituloInput.checked ||
+      usarSubtituloInput.checked
+    );
+  }
+
+  function missingReason() {
+    if (!anyElementActive()) {
+      return "Ative pelo menos um elemento para gerar o anúncio.";
+    }
+    if (usarCarroInput.checked && !state.uploaded.carro) {
+      return "Envie a foto do carro.";
+    }
+    if (usarPecaInput.checked && !state.uploaded.peca) {
+      return "Envie a foto da peça.";
+    }
+    if (usarPrintInput.checked && !state.uploaded.print) {
+      return "Envie o print de aplicação.";
+    }
+    if (usarTituloInput.checked && !tituloInput.value.trim()) {
+      return "Informe o título.";
+    }
+    return null;
+  }
+
+  function allRequiredReady() {
+    return missingReason() === null;
+  }
+
+  function updateRangeLabels() {
+    valLarguraCarro.textContent = `${larguraCarroInput.value} px`;
+    valEscalaPeca.textContent = `${escalaPecaInput.value}%`;
+    valLarguraPrint.textContent = `${larguraPrintInput.value} px`;
+    valTamTitulo.textContent = `${tamTituloInput.value} px`;
+    valTamSub.textContent = `${tamSubInput.value} px`;
+    valTamEtiqueta.textContent = `${tamEtiquetaInput.value} px`;
+  }
+
+  function syncBlockStates() {
+    const mapa = [
+      ["carro", usarCarroInput.checked],
+      ["peca", usarPecaInput.checked],
+      ["print", usarPrintInput.checked],
+      ["etiqueta", usarEtiquetaInput.checked],
+      ["titulo", usarTituloInput.checked],
+      ["subtitulo", usarSubtituloInput.checked],
+    ];
+    for (const [bloco, ativo] of mapa) {
+      const el = document.querySelector(`[data-bloco="${bloco}"]`);
+      if (el) {
+        el.classList.toggle("is-disabled", !ativo);
+      }
+    }
+    const mostrarCrop = Boolean(usarPrintInput.checked && state.uploaded.print && state.printMeta);
+    cropSection.hidden = !mostrarCrop;
+    if (mostrarCrop) {
+      layoutCropCanvas();
+    }
   }
 
   function getSubtituloLinhas() {
@@ -107,7 +198,19 @@
       titulo: tituloInput.value,
       subtitulo: getSubtituloLinhas(),
       etiqueta: etiquetaInput.value,
-      recorte_print: recorteArrayFromCrop(),
+      recorte_print: usarPrintInput.checked ? recorteArrayFromCrop() : null,
+      usar_carro: usarCarroInput.checked,
+      usar_peca: usarPecaInput.checked,
+      usar_print: usarPrintInput.checked,
+      usar_etiqueta: usarEtiquetaInput.checked,
+      usar_titulo: usarTituloInput.checked,
+      usar_subtitulo: usarSubtituloInput.checked,
+      largura_carro: Number(larguraCarroInput.value),
+      escala_peca: Number(escalaPecaInput.value) / 100,
+      largura_print: Number(larguraPrintInput.value),
+      tam_titulo: Number(tamTituloInput.value),
+      tam_sub: Number(tamSubInput.value),
+      tam_etiqueta: Number(tamEtiquetaInput.value),
     };
   }
 
@@ -157,14 +260,18 @@
     }
   }
 
-  function schedulePreview() {
+  function schedulePreview(imediato = false) {
     cancelPendingPreview();
     clearSaveStatus();
     if (state.errorSource !== "upload") {
       clearError();
     }
-    if (!allPhotosUploaded() || !tituloInput.value.trim()) {
+    if (!allRequiredReady()) {
       showPreviewPlaceholder();
+      return;
+    }
+    if (imediato) {
+      runPreview();
       return;
     }
     state.previewTimer = setTimeout(runPreview, DEBOUNCE_MS);
@@ -172,7 +279,7 @@
 
   async function runPreview() {
     state.previewTimer = null;
-    if (!allPhotosUploaded() || !tituloInput.value.trim()) {
+    if (!allRequiredReady()) {
       showPreviewPlaceholder();
       return;
     }
@@ -514,8 +621,7 @@
           image: loadedPrintImg,
         };
         state.crop = rectFromRecorte(data.recorte, data.largura, data.altura);
-        cropSection.hidden = false;
-        layoutCropCanvas();
+        syncBlockStates();
       }
 
       schedulePreview();
@@ -606,19 +712,7 @@
   }
 
   function validateBeforeSave() {
-    if (!state.uploaded.carro) {
-      return "Envie a foto do carro.";
-    }
-    if (!state.uploaded.peca) {
-      return "Envie a foto da peça.";
-    }
-    if (!state.uploaded.print) {
-      return "Envie o print de aplicação.";
-    }
-    if (!tituloInput.value.trim()) {
-      return "Informe o título.";
-    }
-    return null;
+    return missingReason();
   }
 
   async function salvarPng() {
@@ -670,12 +764,52 @@
     }
   }
 
-  tituloInput.addEventListener("input", schedulePreview);
+  tituloInput.addEventListener("input", () => schedulePreview());
   subtituloInput.addEventListener("input", () => {
     updateSubtitleCounter();
     schedulePreview();
   });
-  etiquetaInput.addEventListener("input", schedulePreview);
+  etiquetaInput.addEventListener("input", () => schedulePreview());
+
+  for (const checkbox of [
+    usarCarroInput,
+    usarPecaInput,
+    usarPrintInput,
+    usarEtiquetaInput,
+    usarTituloInput,
+    usarSubtituloInput,
+  ]) {
+    checkbox.addEventListener("change", () => {
+      syncBlockStates();
+      schedulePreview(true);
+    });
+  }
+
+  for (const slider of [
+    larguraCarroInput,
+    escalaPecaInput,
+    larguraPrintInput,
+    tamTituloInput,
+    tamSubInput,
+    tamEtiquetaInput,
+  ]) {
+    slider.addEventListener("input", () => {
+      updateRangeLabels();
+      schedulePreview();
+    });
+  }
+
+  btnRestaurarTamanhos.addEventListener("click", () => {
+    larguraCarroInput.value = String(DEFAULTS.larguraCarro);
+    escalaPecaInput.value = String(DEFAULTS.escalaPecaPct);
+    larguraPrintInput.value = String(DEFAULTS.larguraPrint);
+    tamTituloInput.value = String(DEFAULTS.tamTitulo);
+    tamSubInput.value = String(DEFAULTS.tamSub);
+    tamEtiquetaInput.value = String(DEFAULTS.tamEtiqueta);
+    updateRangeLabels();
+    schedulePreview(true);
+  });
+
   btnBaixar.addEventListener("click", salvarPng);
 
   if (typeof ResizeObserver !== "undefined") {
@@ -685,4 +819,6 @@
   }
 
   updateSubtitleCounter();
+  updateRangeLabels();
+  syncBlockStates();
 })();

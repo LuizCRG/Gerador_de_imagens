@@ -149,22 +149,63 @@ def normalizar_recorte(
     return (x0, y0, x0 + w, y0 + h)
 
 
+def caixa_cartao(largura: int = PRINT_TAM[0]) -> tuple[int, int, int, int]:
+    """Calcula a caixa (x0, y0, x1, y1) do cartão branco ancorado na base inferior esquerda."""
+    pw = max(1, int(largura))
+    ph = max(1, round(pw * PRINT_TAM[1] / PRINT_TAM[0]))
+    cw = pw + 2 * CARTAO_BORDA
+    ch = ph + 2 * CARTAO_BORDA
+    y_base = CARTAO_POS[1] + PRINT_TAM[1] + 2 * CARTAO_BORDA
+    x0 = CARTAO_POS[0]
+    y0 = y_base - ch
+    return (x0, y0, x0 + cw, y0 + ch)
+
+
+def pos_etiqueta_no_cartao(
+    caixa: tuple[int, int, int, int],
+    tam_fonte: int = ETIQ_TAM,
+) -> tuple[int, int]:
+    """Calcula a posição (x, y) da etiqueta centrada sobre a borda superior do cartão."""
+    alt = max(16, round(ETIQ_ALT * tam_fonte / ETIQ_TAM))
+    dx = ETIQ_POS[0] - CARTAO_POS[0]
+    return (caixa[0] + dx, caixa[1] - alt // 2)
+
+
+def caixa_etiqueta(
+    texto: str,
+    tam_fonte: int = ETIQ_TAM,
+    pos: tuple[int, int] | None = None,
+) -> tuple[int, int, int, int]:
+    """Calcula a caixa (x0, y0, x1, y1) da etiqueta em pílula sem desenhar."""
+    alt = max(16, round(ETIQ_ALT * tam_fonte / ETIQ_TAM))
+    pad = round(ETIQ_PAD * tam_fonte / ETIQ_TAM)
+    fonte = ImageFont.truetype(str(FONTE_EXTRABOLD), tam_fonte)
+    larg = max(alt, round(fonte.getlength(texto.upper()) + pad))
+    x0, y0 = ETIQ_POS if pos is None else pos
+    return (x0, y0, x0 + larg, y0 + alt)
+
+
 def desenhar_cartao(
     canvas: Image.Image,
     img_print: Image.Image,
     recorte: tuple[int, int, int, int],
+    largura: int = PRINT_TAM[0],
 ) -> tuple[int, int, int, int]:
     """Desenha sombra, cartão branco e foto recortada do print no canvas; devolve caixa."""
-    pw, ph = PRINT_TAM
-    cw = pw + 2 * CARTAO_BORDA
-    ch = ph + 2 * CARTAO_BORDA
-    x0, y0 = CARTAO_POS
+    x0, y0, x1, y1 = caixa_cartao(largura)
+    cw = x1 - x0
+    ch = y1 - y0
+    pw = cw - 2 * CARTAO_BORDA
+    ph = ch - 2 * CARTAO_BORDA
+    print_tam = (pw, ph)
+    raio_cartao = min(CARTAO_RAIO, cw // 2, ch // 2)
+    raio_print = min(PRINT_RAIO, pw // 2, ph // 2)
 
     pad = SOMBRA_BLUR * 4
     sombra = Image.new("RGBA", (cw + 2 * pad, ch + 2 * pad), (0, 0, 0, 0))
     ImageDraw.Draw(sombra).rounded_rectangle(
         [pad, pad, pad + cw - 1, pad + ch - 1],
-        radius=CARTAO_RAIO,
+        radius=raio_cartao,
         fill=(0, 0, 0, round(SOMBRA_OPAC * 255)),
     )
     if SOMBRA_BLUR > 0:
@@ -172,16 +213,16 @@ def desenhar_cartao(
     _compor_camada(canvas, sombra, (x0 - pad, y0 + SOMBRA_DY - pad))
 
     cartao = Image.new("RGBA", (cw, ch), (255, 255, 255, 255))
-    cartao.putalpha(_mascara_arredondada((cw, ch), CARTAO_RAIO))
+    cartao.putalpha(_mascara_arredondada((cw, ch), raio_cartao))
 
     recortada = img_print.crop(recorte)
     tem_transp = img_print.has_transparency_data
     foto = (
         recortada.convert("RGBA" if tem_transp else "RGB")
-        .resize(PRINT_TAM, Image.Resampling.LANCZOS)
+        .resize(print_tam, Image.Resampling.LANCZOS)
         .convert("RGBA")
     )
-    mascara_foto = _mascara_arredondada(PRINT_TAM, PRINT_RAIO)
+    mascara_foto = _mascara_arredondada(print_tam, raio_print)
     if tem_transp:
         foto.putalpha(ImageChops.multiply(foto.getchannel("A"), mascara_foto))
     else:
@@ -189,25 +230,32 @@ def desenhar_cartao(
 
     cartao.alpha_composite(foto, dest=(CARTAO_BORDA, CARTAO_BORDA))
     _compor_camada(canvas, cartao, (x0, y0))
-    return (x0, y0, x0 + cw, y0 + ch)
+    return (x0, y0, x1, y1)
 
 
-def desenhar_etiqueta(canvas: Image.Image, texto: str) -> tuple[int, int, int, int]:
+def desenhar_etiqueta(
+    canvas: Image.Image,
+    texto: str,
+    tam_fonte: int = ETIQ_TAM,
+    pos: tuple[int, int] | None = None,
+) -> tuple[int, int, int, int]:
     """Desenha a etiqueta em pílula com contorno branco e texto branco centrado; devolve caixa."""
     texto_upper = texto.upper()
-    fonte = ImageFont.truetype(str(FONTE_EXTRABOLD), ETIQ_TAM)
-    larg = max(ETIQ_ALT, round(fonte.getlength(texto_upper) + ETIQ_PAD))
-    alt = ETIQ_ALT
+    fonte = ImageFont.truetype(str(FONTE_EXTRABOLD), tam_fonte)
+    x0, y0, x1, y1 = caixa_etiqueta(texto, tam_fonte=tam_fonte, pos=pos)
+    larg = x1 - x0
+    alt = y1 - y0
     raio = alt // 2
+    contorno = max(2, round(ETIQ_CONTORNO * tam_fonte / ETIQ_TAM))
 
     etiqueta = Image.new("RGBA", (larg, alt), (255, 255, 255, 255))
     etiqueta.putalpha(_mascara_arredondada((larg, alt), raio))
 
-    larg_int = larg - 2 * ETIQ_CONTORNO
-    alt_int = alt - 2 * ETIQ_CONTORNO
+    larg_int = max(1, larg - 2 * contorno)
+    alt_int = max(1, alt - 2 * contorno)
     miolo = Image.new("RGBA", (larg_int, alt_int), (*ETIQ_COR, 255))
-    miolo.putalpha(_mascara_arredondada((larg_int, alt_int), max(0, raio - ETIQ_CONTORNO)))
-    etiqueta.alpha_composite(miolo, dest=(ETIQ_CONTORNO, ETIQ_CONTORNO))
+    miolo.putalpha(_mascara_arredondada((larg_int, alt_int), max(0, raio - contorno)))
+    etiqueta.alpha_composite(miolo, dest=(contorno, contorno))
 
     ImageDraw.Draw(etiqueta).text(
         (larg / 2, alt / 2),
@@ -217,6 +265,5 @@ def desenhar_etiqueta(canvas: Image.Image, texto: str) -> tuple[int, int, int, i
         anchor="mm",
     )
 
-    x0, y0 = ETIQ_POS
     _compor_camada(canvas, etiqueta, (x0, y0))
-    return (x0, y0, x0 + larg, y0 + alt)
+    return (x0, y0, x1, y1)

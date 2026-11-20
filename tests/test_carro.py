@@ -63,3 +63,9 @@ def test_multiply_canvas_rgba(img_carro):
     x0, y0, x1, y1 = aplicar_multiply(cv, c, CARRO_POS)
     assert cv.getpixel((26, 10))[:3] == fundo_radial().getpixel((26, 10))
     assert max(cv.getpixel(((x0 + x1) // 2, (y0 + y1) // 2))[:3]) < 80
+
+
+def test_recortar_carro_largura_personalizada(img_carro):
+    c = recortar_carro(img_carro, largura=680, altura_max=round(CARRO_ALT_MAX * 680 / CARRO_LARG))
+    assert c.height == round(CARRO_ALT_MAX * 680 / CARRO_LARG)
+    assert c.width == round(570 * c.height / 330)

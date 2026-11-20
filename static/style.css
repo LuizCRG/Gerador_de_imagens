@@ -462,6 +462,146 @@ body {
   color: var(--ok-text);
 }
 
+.section-head-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.section-head-main h2 {
+  margin: 0;
+}
+
+.block-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: var(--surface);
+  transition: background-color 0.15s ease, opacity 0.15s ease;
+}
+
+.block-card + .block-card {
+  margin-top: 12px;
+}
+
+.block-card.is-disabled {
+  background: var(--surface-muted);
+  opacity: 0.72;
+}
+
+.block-card.is-disabled > .block-body,
+.sub-block.is-disabled > .block-body {
+  display: none;
+}
+
+.block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.block-head h3,
+.crop-header h4 {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.block-title-wrap {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.block-body {
+  margin-top: 10px;
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+  margin: 0;
+}
+
+.dropzone-row {
+  min-height: 74px;
+  flex-direction: row;
+  justify-content: flex-start;
+  text-align: left;
+  padding: 8px 10px;
+}
+
+.dropzone-row .dropzone-thumb-wrap {
+  width: 54px;
+  height: 54px;
+  flex-shrink: 0;
+}
+
+.range-row {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 56px;
+  align-items: center;
+  gap: 10px;
+}
+
+.range-row label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.range-row input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+  cursor: pointer;
+  margin: 0;
+}
+
+.range-val {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.sub-block {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.sub-block-title {
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.crop-block {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
 @media (max-width: 960px) {
   .layout {
     grid-template-columns: 1fr;

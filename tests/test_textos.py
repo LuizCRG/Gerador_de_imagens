@@ -226,3 +226,37 @@ def test_textos_fora_canvas_detecta_gap_na_borda():
 
     t_titulo_baixo = posicionar_textos(1000, "Puxador", [])
     assert textos_fora_canvas(t_titulo_baixo) == (True, False)
+
+
+def test_posicionar_textos_sem_titulo():
+    t = posicionar_textos(
+        283,
+        "",
+        ["compatível com", "new fiesta"],
+        usar_titulo=False,
+    )
+    assert t.linhas_titulo == []
+    assert t.baselines_titulo == []
+    assert t.linhas_sub == ["COMPATÍVEL COM", "NEW FIESTA"]
+    assert t.baselines_sub == [283 + 56, 283 + 56 + 48]
+
+
+def test_posicionar_textos_sem_subtitulo():
+    t = posicionar_textos(
+        283,
+        "Puxador de Porta",
+        ["qualquer", "linha"],
+        usar_subtitulo=False,
+    )
+    assert t.linhas_titulo == ["Puxador", "de Porta"]
+    assert t.linhas_sub == []
+    assert t.baselines_sub == []
+
+
+def test_posicionar_textos_largura_max_personalizada():
+    titulo = "Retrovisor Externo"
+    t_estreito = posicionar_textos(283, titulo, [], larg_max_titulo=560)
+    t_largo = posicionar_textos(283, titulo, [], larg_max_titulo=952)
+    assert t_estreito.tam_titulo < 132
+    assert t_largo.tam_titulo == 132
+    assert t_largo.tam_titulo > t_estreito.tam_titulo

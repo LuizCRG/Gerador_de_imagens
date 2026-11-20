@@ -358,3 +358,150 @@ def test_subtitulo_extremo_com_gap_na_borda_emite_aviso(img_carro, img_print):
     assert r.tam_sub == 26
     assert r.escala_peca == 1.0
     assert "Não foi possível eliminar: fora_do_canvas" in r.avisos
+
+
+def test_montar_sem_print_libera_espaco_inferior(img_carro, img_peca):
+    r = montar(
+        Entrada(
+            carro=img_carro,
+            peca=img_peca,
+            print_img=None,
+            titulo="Puxador de Porta",
+            subtitulo=["linha 1", "linha 2", "linha 3"],
+            etiqueta="",
+            usar_print=False,
+            tam_sub=64,
+        )
+    )
+    assert r.avisos == []
+    assert r.recorte_print is None
+    assert r.tam_sub == 64
+
+
+def test_montar_sem_print_peca_larga_usa_espaco_inferior(img_carro):
+    peca_larga = Image.new("RGB", (1200, 400), (0, 0, 0))
+    r = montar(
+        Entrada(
+            carro=img_carro,
+            peca=peca_larga,
+            print_img=None,
+            titulo="Puxador de Porta",
+            subtitulo=["compatível com", "new fiesta sedan", "2011 a 2017"],
+            etiqueta="",
+            usar_print=False,
+        )
+    )
+    assert r.avisos == []
+    assert r.escala_peca == 1.0
+    # A peça larga deve aparecer na faixa inferior (x < 200, y > 750)
+    assert r.imagem.getpixel((120, 850)) == (0, 0, 0)
+
+
+def test_montar_sem_carro_sobe_titulo(img_peca, img_print):
+    r = montar(
+        Entrada(
+            carro=None,
+            peca=img_peca,
+            print_img=img_print,
+            titulo="Puxador de Porta",
+            subtitulo=["compatível com", "new fiesta"],
+            etiqueta="aplicação",
+            usar_carro=False,
+        )
+    )
+    assert r.avisos == []
+    # Sem carro, o título deve aparecer no terço superior (y < 150)
+    arr = np.asarray(r.imagem)
+    regiao_topo = arr[20:150, 36:400]
+    assert np.any(regiao_topo.max(axis=2) < 30)
+
+
+def test_montar_sem_peca_titulo_usa_largura_total(img_carro, img_print):
+    r = montar(
+        Entrada(
+            carro=img_carro,
+            peca=None,
+            print_img=img_print,
+            titulo="Retrovisor Externo",
+            subtitulo=[],
+            etiqueta="aplicação",
+            usar_peca=False,
+        )
+    )
+    assert r.avisos == []
+    assert r.tam_titulo == TITULO_TAM
+
+
+def test_montar_sem_etiqueta_permite_subtitulo_ate_cartao(img_carro, img_peca, img_print):
+    r = montar(
+        Entrada(
+            carro=img_carro,
+            peca=img_peca,
+            print_img=img_print,
+            titulo="Puxador de Porta",
+            subtitulo=["linha 1", "linha 2", "linha 3"],
+            etiqueta="aplicação",
+            usar_etiqueta=False,
+        )
+    )
+    assert r.avisos == []
+    # Topo da pílula original em (74, 700) permanece como fundo/cartão (sem azul ETIQ_COR)
+    assert r.imagem.getpixel((74, 700)) != ETIQ_COR
+
+
+def test_montar_sem_titulo_sobe_subtitulo(img_carro, img_peca, img_print):
+    r = montar(
+        Entrada(
+            carro=img_carro,
+            peca=img_peca,
+            print_img=img_print,
+            titulo="",
+            subtitulo=["COMPATÍVEL COM NEW FIESTA"],
+            etiqueta="aplicação",
+            usar_titulo=False,
+        )
+    )
+    assert r.avisos == []
+    arr = np.asarray(r.imagem)
+    assert np.any(arr[290:360, 40:400].max(axis=2) < 80)
+
+
+def test_montar_tamanhos_personalizados_sem_falso_aviso(img_carro, img_peca, img_print):
+    r = montar(
+        Entrada(
+            carro=img_carro,
+            peca=img_peca,
+            print_img=img_print,
+            titulo="Puxador",
+            subtitulo=["compatível com"],
+            etiqueta="porta",
+            largura_carro=380,
+            escala_peca=0.8,
+            largura_print=280,
+            tam_titulo=96,
+            tam_sub=32,
+            tam_etiqueta=20,
+        )
+    )
+    assert r.avisos == []
+    assert r.tam_titulo == 96
+    assert r.tam_sub == 32
+    assert r.escala_peca == 0.8
+
+
+def test_montar_tudo_desativado_erro():
+    import pytest
+
+    with pytest.raises(ValueError, match="Ative pelo menos um elemento"):
+        montar(
+            Entrada(
+                carro=None,
+                peca=None,
+                print_img=None,
+                usar_carro=False,
+                usar_peca=False,
+                usar_print=False,
+                usar_titulo=False,
+                usar_subtitulo=False,
+            )
+        )

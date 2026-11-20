@@ -16,10 +16,21 @@
 
   <main class="layout">
     <section class="panel panel-inputs" aria-label="Configuração do anúncio">
-      <div class="section-block">
-        <h2>1. Fotos</h2>
-        <div class="upload-grid">
-          <div class="dropzone" data-tipo="carro">
+      <div class="section-head-main">
+        <h2>Blocos e dimensões</h2>
+        <button id="btn-restaurar-tamanhos" type="button" class="btn btn-secondary">Restaurar padrões</button>
+      </div>
+
+      <div class="block-card" data-bloco="carro">
+        <div class="block-head">
+          <h3>Carro</h3>
+          <label class="toggle">
+            <input id="usar-carro" type="checkbox" checked>
+            <span>Ativar</span>
+          </label>
+        </div>
+        <div class="block-body">
+          <div class="dropzone dropzone-row" data-tipo="carro">
             <input
               id="input-carro"
               class="dropzone-input"
@@ -32,12 +43,28 @@
               <img class="dropzone-thumb" alt="Miniatura do carro">
             </div>
             <div class="dropzone-body">
-              <span class="dropzone-title">Carro</span>
+              <span class="dropzone-title">Foto do carro</span>
               <span class="dropzone-meta">Arraste ou clique</span>
             </div>
           </div>
+          <div class="range-row">
+            <label for="largura-carro">Largura máx.</label>
+            <input id="largura-carro" type="range" min="250" max="900" step="10" value="500">
+            <span id="val-largura-carro" class="range-val">500 px</span>
+          </div>
+        </div>
+      </div>
 
-          <div class="dropzone" data-tipo="peca">
+      <div class="block-card" data-bloco="peca">
+        <div class="block-head">
+          <h3>Peça</h3>
+          <label class="toggle">
+            <input id="usar-peca" type="checkbox" checked>
+            <span>Ativar</span>
+          </label>
+        </div>
+        <div class="block-body">
+          <div class="dropzone dropzone-row" data-tipo="peca">
             <input
               id="input-peca"
               class="dropzone-input"
@@ -50,12 +77,84 @@
               <img class="dropzone-thumb" alt="Miniatura da peça">
             </div>
             <div class="dropzone-body">
-              <span class="dropzone-title">Peça</span>
+              <span class="dropzone-title">Foto da peça</span>
               <span class="dropzone-meta">Arraste ou clique</span>
             </div>
           </div>
+          <div class="range-row">
+            <label for="escala-peca">Tamanho</label>
+            <input id="escala-peca" type="range" min="40" max="160" step="5" value="100">
+            <span id="val-escala-peca" class="range-val">100%</span>
+          </div>
+        </div>
+      </div>
 
-          <div class="dropzone" data-tipo="print">
+      <div class="block-card" data-bloco="titulo">
+        <div class="block-head">
+          <h3>Título</h3>
+          <label class="toggle">
+            <input id="usar-titulo" type="checkbox" checked>
+            <span>Ativar</span>
+          </label>
+        </div>
+        <div class="block-body">
+          <div class="field">
+            <input
+              id="titulo"
+              name="titulo"
+              type="text"
+              placeholder="Ex.: Puxador de Porta"
+              autocomplete="off"
+              aria-label="Título"
+            >
+          </div>
+          <div class="range-row">
+            <label for="tam-titulo">Tamanho da fonte</label>
+            <input id="tam-titulo" type="range" min="48" max="180" step="2" value="132">
+            <span id="val-tam-titulo" class="range-val">132 px</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="block-card" data-bloco="subtitulo">
+        <div class="block-head">
+          <div class="block-title-wrap">
+            <h3>Subtítulo</h3>
+            <span id="subtitulo-contador" class="field-counter" aria-live="polite">0/3 linhas</span>
+          </div>
+          <label class="toggle">
+            <input id="usar-subtitulo" type="checkbox" checked>
+            <span>Ativar</span>
+          </label>
+        </div>
+        <div class="block-body">
+          <div class="field">
+            <textarea
+              id="subtitulo"
+              name="subtitulo"
+              rows="3"
+              placeholder="COMPATÍVEL COM&#10;NEW FIESTA SEDAN&#10;2011 A 2017"
+              aria-label="Subtítulo (até 3 linhas)"
+            ></textarea>
+          </div>
+          <div class="range-row">
+            <label for="tam-sub">Tamanho da fonte</label>
+            <input id="tam-sub" type="range" min="20" max="72" step="2" value="40">
+            <span id="val-tam-sub" class="range-val">40 px</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="block-card" data-bloco="print">
+        <div class="block-head">
+          <h3>Print de aplicação</h3>
+          <label class="toggle">
+            <input id="usar-print" type="checkbox" checked>
+            <span>Ativar</span>
+          </label>
+        </div>
+        <div class="block-body">
+          <div class="dropzone dropzone-row" data-tipo="print">
             <input
               id="input-print"
               class="dropzone-input"
@@ -68,61 +167,56 @@
               <img class="dropzone-thumb" alt="Miniatura do print">
             </div>
             <div class="dropzone-body">
-              <span class="dropzone-title">Print</span>
+              <span class="dropzone-title">Foto/print do local</span>
               <span class="dropzone-meta">Arraste ou clique</span>
             </div>
           </div>
-        </div>
-      </div>
 
-      <div class="section-block">
-        <h2>2. Textos</h2>
-        <div class="field">
-          <label for="titulo">Título</label>
-          <input
-            id="titulo"
-            name="titulo"
-            type="text"
-            placeholder="Ex.: Puxador de Porta"
-            autocomplete="off"
-          >
-        </div>
-
-        <div class="field">
-          <div class="field-head">
-            <label for="subtitulo">Subtítulo <span class="hint">(até 3 linhas, uma por linha)</span></label>
-            <span id="subtitulo-contador" class="field-counter" aria-live="polite">0/3 linhas</span>
+          <div class="range-row">
+            <label for="largura-print">Largura do cartão</label>
+            <input id="largura-print" type="range" min="200" max="560" step="10" value="350">
+            <span id="val-largura-print" class="range-val">350 px</span>
           </div>
-          <textarea
-            id="subtitulo"
-            name="subtitulo"
-            rows="3"
-            placeholder="COMPATÍVEL COM&#10;NEW FIESTA SEDAN&#10;2011 A 2017"
-          ></textarea>
-        </div>
 
-        <div class="field">
-          <label for="etiqueta">Etiqueta do print</label>
-          <input
-            id="etiqueta"
-            name="etiqueta"
-            type="text"
-            placeholder="Ex.: APLICAÇÃO NA PORTA"
-            autocomplete="off"
-          >
-        </div>
-      </div>
-
-      <div id="crop-section" class="section-block" hidden>
-        <div class="crop-header">
-          <div>
-            <h2>3. Recorte do print</h2>
-            <p id="crop-info" class="hint">Proporção fixa 350:255 • Arraste ou redimensione pelo canto</p>
+          <div class="sub-block" data-bloco="etiqueta">
+            <div class="block-head">
+              <span class="sub-block-title">Etiqueta do print</span>
+              <label class="toggle">
+                <input id="usar-etiqueta" type="checkbox" checked>
+                <span>Ativar</span>
+              </label>
+            </div>
+            <div class="block-body">
+              <div class="field">
+                <input
+                  id="etiqueta"
+                  name="etiqueta"
+                  type="text"
+                  placeholder="Ex.: APLICAÇÃO NA PORTA"
+                  autocomplete="off"
+                  aria-label="Etiqueta do print"
+                >
+              </div>
+              <div class="range-row">
+                <label for="tam-etiqueta">Fonte da etiqueta</label>
+                <input id="tam-etiqueta" type="range" min="14" max="40" step="2" value="24">
+                <span id="val-tam-etiqueta" class="range-val">24 px</span>
+              </div>
+            </div>
           </div>
-          <button id="btn-centralizar-recorte" type="button" class="btn btn-secondary">Centralizar recorte</button>
-        </div>
-        <div id="crop-canvas-wrap" class="crop-canvas-wrap">
-          <canvas id="crop-canvas" aria-label="Editor de recorte do print"></canvas>
+
+          <div id="crop-section" class="crop-block" hidden>
+            <div class="crop-header">
+              <div>
+                <h4>Recorte do print</h4>
+                <p id="crop-info" class="hint">Proporção fixa 350:255 • Arraste ou redimensione pelo canto</p>
+              </div>
+              <button id="btn-centralizar-recorte" type="button" class="btn btn-secondary">Centralizar recorte</button>
+            </div>
+            <div id="crop-canvas-wrap" class="crop-canvas-wrap">
+              <canvas id="crop-canvas" aria-label="Editor de recorte do print"></canvas>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -138,7 +232,7 @@
       <div class="preview-stage">
         <img id="preview-img" class="preview-img" alt="Prévia do anúncio gerado" hidden>
         <div id="preview-placeholder" class="preview-placeholder">
-          Envie as 3 fotos e informe o título para gerar a prévia automaticamente.
+          Envie as fotos ativadas e informe o título para gerar a prévia automaticamente.
         </div>
       </div>
 

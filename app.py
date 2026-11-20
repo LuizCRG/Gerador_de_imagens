@@ -12,18 +12,44 @@ from PIL import Image, UnidentifiedImageError
 
 from anuncio.cartao import detectar_area_foto, normalizar_recorte
 from anuncio.imagens import abrir_imagem
+from anuncio.layout import CARRO_LARG, ETIQ_TAM, PRINT_TAM, SUB_TAM, TITULO_TAM
 from anuncio.montar import Entrada, Resultado, montar
 
 _TIPOS_IMAGEM = frozenset({"carro", "peca", "print"})
-_IMAGENS_OBRIGATORIAS = (
-    ("carro", "Envie a foto do carro"),
-    ("peca", "Envie a foto da peça"),
-    ("print", "Envie o print de aplicação"),
-)
 
 
 def _erro(mensagem: str, status: int = 400) -> tuple[Response, int]:
     return jsonify({"erro": mensagem}), status
+
+
+def _parse_bool(dados: dict[str, object], campo: str, padrao: bool = True) -> bool:
+    valor = dados.get(campo)
+    if valor is None:
+        return padrao
+    if not isinstance(valor, bool):
+        raise ValueError(f"Campo '{campo}' inválido")
+    return valor
+
+
+def _parse_num(
+    dados: dict[str, object],
+    campo: str,
+    padrao: int | float,
+    minimo: float,
+    maximo: float,
+    *,
+    inteiro: bool = True,
+) -> int | float:
+    valor = dados.get(campo)
+    if valor is None:
+        return padrao
+    if isinstance(valor, bool) or not isinstance(valor, (int, float)):
+        raise ValueError(f"Campo '{campo}' inválido")
+    if isinstance(valor, float) and not math.isfinite(valor):
+        raise ValueError(f"Campo '{campo}' inválido")
+    if valor < minimo or valor > maximo:
+        raise ValueError(f"Campo '{campo}' fora do limite ({minimo}..{maximo})")
+    return round(valor) if inteiro else float(valor)
 
 
 def _parse_recorte(valor: object) -> tuple[int, int, int, int] | None:
@@ -63,13 +89,23 @@ def _caminho_disponivel(pasta: Path, slug: str) -> Path:
 
 
 def _montar_da_requisicao(imagens: dict[str, Image.Image]) -> tuple[Resultado, str]:
-    for chave, mensagem in _IMAGENS_OBRIGATORIAS:
-        if chave not in imagens:
-            raise ValueError(mensagem)
-
     dados = request.get_json(silent=True)
     if not isinstance(dados, dict):
         raise ValueError("Corpo JSON inválido")
+
+    usar_carro = _parse_bool(dados, "usar_carro", True)
+    usar_peca = _parse_bool(dados, "usar_peca", True)
+    usar_print = _parse_bool(dados, "usar_print", True)
+    usar_etiqueta = _parse_bool(dados, "usar_etiqueta", True)
+    usar_titulo = _parse_bool(dados, "usar_titulo", True)
+    usar_subtitulo = _parse_bool(dados, "usar_subtitulo", True)
+
+    largura_carro = int(_parse_num(dados, "largura_carro", CARRO_LARG, 100, 980))
+    escala_peca = float(_parse_num(dados, "escala_peca", 1.0, 0.2, 2.5, inteiro=False))
+    largura_print = int(_parse_num(dados, "largura_print", PRINT_TAM[0], 100, 900))
+    tam_titulo = int(_parse_num(dados, "tam_titulo", TITULO_TAM, 20, 300))
+    tam_sub = int(_parse_num(dados, "tam_sub", SUB_TAM, 12, 150))
+    tam_etiqueta = int(_parse_num(dados, "tam_etiqueta", ETIQ_TAM, 10, 80))
 
     titulo = "" if dados.get("titulo") is None else dados.get("titulo")
     if not isinstance(titulo, str):
@@ -85,15 +121,27 @@ def _montar_da_requisicao(imagens: dict[str, Image.Image]) -> tuple[Resultado, s
 
     recorte = _parse_recorte(dados.get("recorte_print"))
     entrada = Entrada(
-        carro=imagens["carro"],
-        peca=imagens["peca"],
-        print_img=imagens["print"],
+        carro=imagens.get("carro"),
+        peca=imagens.get("peca"),
+        print_img=imagens.get("print"),
         titulo=titulo,
         subtitulo=subtitulo,
         etiqueta=etiqueta,
         recorte_print=recorte,
+        usar_carro=usar_carro,
+        usar_peca=usar_peca,
+        usar_print=usar_print,
+        usar_etiqueta=usar_etiqueta,
+        usar_titulo=usar_titulo,
+        usar_subtitulo=usar_subtitulo,
+        largura_carro=largura_carro,
+        escala_peca=escala_peca,
+        largura_print=largura_print,
+        tam_titulo=tam_titulo,
+        tam_sub=tam_sub,
+        tam_etiqueta=tam_etiqueta,
     )
-    return montar(entrada), titulo
+    return montar(entrada), (titulo if usar_titulo else "")
 
 
 def criar_app(pasta_saida: Path = Path("saida")) -> Flask:
@@ -150,7 +198,9 @@ def criar_app(pasta_saida: Path = Path("saida")) -> Flask:
         return jsonify({
             "png": png_b64,
             "avisos": resultado.avisos,
-            "recorte_print": list(resultado.recorte_print),
+            "recorte_print": (
+                list(resultado.recorte_print) if resultado.recorte_print is not None else None
+            ),
         })
 
     @app.post("/api/salvar")
