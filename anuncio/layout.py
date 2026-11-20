@@ -1,0 +1,56 @@
+"""Constantes numéricas e caminhos de fontes do layout do anúncio (1024x1024)."""
+
+from pathlib import Path
+
+RAIZ_PROJETO = Path(__file__).resolve().parent.parent
+
+CANVAS = 1024
+
+FUNDO_CENTRO = (760, 480)
+FUNDO_RAIO = 700
+FUNDO_COR_CENTRO = (255, 255, 255)
+FUNDO_COR_BORDA = (228, 234, 243)
+
+CAIXA_PECA = (420, 12, 1000, 1012)
+GLOW = [
+    ((30, 140, 255), 41, 50, 0.55),
+    ((70, 190, 255), 15, 22, 0.40),
+    ((190, 230, 255), 5, 8, 0.45),
+]
+
+CARRO_POS = (24, 8)
+CARRO_LARG = 500
+CARRO_ALT_MAX = 275
+CARRO_MARGEM = 15
+
+TITULO_X = 36
+TITULO_TAM = 132
+TITULO_COR = (8, 8, 8)
+TITULO_DESLOC = 112
+TITULO_ENTRELINHA = 126
+TITULO_LARG_MAX = 560
+
+SUB_X = 40
+SUB_TAM = 40
+SUB_COR = (52, 52, 52)
+SUB_DESLOC = 56
+SUB_ENTRELINHA = 48
+
+PRINT_TAM = (350, 255)
+PRINT_RAIO = 26
+CARTAO_BORDA = 8
+CARTAO_RAIO = 30
+CARTAO_POS = (40, 712)
+SOMBRA_OPAC = 0.43
+SOMBRA_BLUR = 14
+SOMBRA_DY = 12
+
+ETIQ_COR = (22, 119, 255)
+ETIQ_CONTORNO = 4
+ETIQ_TAM = 24
+ETIQ_ALT = 46
+ETIQ_PAD = 44
+ETIQ_POS = (62, 689)
+
+FONTE_BLACK = RAIZ_PROJETO / "Inter" / "static" / "Inter_18pt-Black.ttf"
+FONTE_EXTRABOLD = RAIZ_PROJETO / "Inter" / "static" / "Inter_18pt-ExtraBold.ttf"
