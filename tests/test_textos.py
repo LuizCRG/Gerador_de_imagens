@@ -24,6 +24,7 @@ from anuncio.textos import (
     mascara_textos,
     posicionar_textos,
     quebrar_titulo,
+    textos_fora_canvas,
 )
 
 
@@ -208,3 +209,20 @@ def test_desenhar_textos_rgb_e_rgba():
     assert cv_rgba.mode == "RGBA"
     assert np.array_equal(arr_rgb, arr_rgba[..., :3])
     assert np.all(arr_rgba[..., 3] == 255)
+
+
+def test_textos_fora_canvas_detecta_gap_na_borda():
+    t_ok = posicionar_textos(283, "Puxador de Porta", ["compatível com", "new fiesta"])
+    assert textos_fora_canvas(t_ok) == (False, False)
+
+    t_sub_gap = posicionar_textos(
+        283,
+        "Puxador de Porta",
+        ["COMPATÍVEL COM NEW FIESTA SEDAN TITANIUM PLUS 2015 A 2020"],
+    )
+    _, m_sub = mascara_textos(t_sub_gap)
+    assert not m_sub[:, -1].any()
+    assert textos_fora_canvas(t_sub_gap) == (False, True)
+
+    t_titulo_baixo = posicionar_textos(1000, "Puxador", [])
+    assert textos_fora_canvas(t_titulo_baixo) == (True, False)

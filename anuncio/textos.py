@@ -76,6 +76,24 @@ def _mascara_bloco(
     return np.asarray(img) > 0
 
 
+def _bloco_fora_canvas(
+    draw: ImageDraw.ImageDraw,
+    linhas: list[str],
+    baselines: list[int],
+    x: int,
+    caminho_fonte: Path,
+    tamanho: int,
+) -> bool:
+    if not linhas:
+        return False
+    fonte = _carregar_fonte(caminho_fonte, tamanho)
+    for linha, y in zip(linhas, baselines, strict=True):
+        left, top, right, bottom = draw.textbbox((x, y), linha, font=fonte, anchor="ls")
+        if left < 0 or top < 0 or right > CANVAS or bottom > CANVAS:
+            return True
+    return False
+
+
 def quebrar_titulo(titulo: str, fonte: ImageFont.FreeTypeFont) -> list[str]:
     """Quebra o título em até 2 linhas equilibradas pela menor largura máxima."""
     palavras = titulo.split()
@@ -188,3 +206,25 @@ def mascara_textos(t: Textos) -> tuple[np.ndarray, np.ndarray]:
         t.tam_sub,
     )
     return m_titulo, m_sub
+
+
+def textos_fora_canvas(t: Textos) -> tuple[bool, bool]:
+    """Verifica se título ou subtítulo ultrapassam [0, CANVAS] pela bounding box."""
+    draw = ImageDraw.Draw(Image.new("L", (1, 1), 0))
+    titulo_fora = _bloco_fora_canvas(
+        draw,
+        t.linhas_titulo,
+        t.baselines_titulo,
+        TITULO_X,
+        FONTE_BLACK,
+        t.tam_titulo,
+    )
+    sub_fora = _bloco_fora_canvas(
+        draw,
+        t.linhas_sub,
+        t.baselines_sub,
+        SUB_X,
+        FONTE_EXTRABOLD,
+        t.tam_sub,
+    )
+    return titulo_fora, sub_fora

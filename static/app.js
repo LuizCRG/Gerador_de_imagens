@@ -472,9 +472,16 @@
       if (tipo === "print") {
         try {
           loadedPrintImg = await loadHtmlImage(nextUrl);
-        } catch (err) {
+        } catch {
           URL.revokeObjectURL(nextUrl);
-          throw err;
+          if (seq === state.uploadSeq[tipo]) {
+            metaEl.textContent = state.metaText[tipo];
+            showError(
+              "Não foi possível exibir esta imagem no navegador (use PNG ou JPEG RGB).",
+              "upload"
+            );
+          }
+          return;
         }
         if (seq !== state.uploadSeq[tipo]) {
           URL.revokeObjectURL(nextUrl);
@@ -598,11 +605,32 @@
     return `${slugifyTitulo(fallbackTitulo)}.png`;
   }
 
+  function validateBeforeSave() {
+    if (!state.uploaded.carro) {
+      return "Envie a foto do carro.";
+    }
+    if (!state.uploaded.peca) {
+      return "Envie a foto da peça.";
+    }
+    if (!state.uploaded.print) {
+      return "Envie o print de aplicação.";
+    }
+    if (!tituloInput.value.trim()) {
+      return "Informe o título.";
+    }
+    return null;
+  }
+
   async function salvarPng() {
     if (state.isSaving) {
       return;
     }
     clearSaveStatus();
+    const validationError = validateBeforeSave();
+    if (validationError) {
+      showError(validationError, "save");
+      return;
+    }
     state.isSaving = true;
     btnBaixar.disabled = true;
     btnBaixar.textContent = "Salvando...";

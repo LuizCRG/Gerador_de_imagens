@@ -34,7 +34,13 @@ from anuncio.layout import (
     SUB_TAM,
     TITULO_TAM,
 )
-from anuncio.textos import Textos, desenhar_textos, mascara_textos, posicionar_textos
+from anuncio.textos import (
+    Textos,
+    desenhar_textos,
+    mascara_textos,
+    posicionar_textos,
+    textos_fora_canvas,
+)
 
 _PECA_ALFA_CORTE = 32
 _PECA_DILAT_TAM = 13
@@ -157,6 +163,8 @@ def verificar(
     caixa_carro_tinta: tuple[int, int, int, int],
     caixa_cartao: tuple[int, int, int, int],
     caixa_etiqueta: tuple[int, int, int, int],
+    titulo_fora: bool = False,
+    sub_fora: bool = False,
 ) -> list[str]:
     """Verifica colisões entre elementos e extravasamento do canvas."""
     problemas: list[str] = []
@@ -183,7 +191,7 @@ def verificar(
         _toca_borda(mascara)
         for mascara in (mascara_peca, m_titulo, m_sub)
     )
-    if fora_caixas or fora_mascaras:
+    if fora_caixas or fora_mascaras or titulo_fora or sub_fora:
         problemas.append("fora_do_canvas")
 
     return problemas
@@ -197,21 +205,25 @@ def _proximo_ajuste(
     mascara_peca: np.ndarray,
     m_titulo: np.ndarray,
     m_sub: np.ndarray,
+    titulo_fora: bool = False,
+    sub_fora: bool = False,
 ) -> tuple[int, int, float, bool]:
     sub_colide = "sub_x_peca" in problemas or "sub_x_etiqueta" in problemas
     fora = "fora_do_canvas" in problemas
+    titulo_extravasa = titulo_fora or _toca_borda(m_titulo)
+    sub_extravasa = sub_fora or _toca_borda(m_sub)
     peca_envolvida = any(p in _PROBLEMAS_PECA for p in problemas) or (
         fora and _toca_borda(mascara_peca)
     )
 
     if (
-        ("titulo_x_peca" in problemas or (fora and _toca_borda(m_titulo)))
+        ("titulo_x_peca" in problemas or (fora and titulo_extravasa))
         and tam_t > _TITULO_MIN_CORRECAO
     ):
         return max(_TITULO_MIN_CORRECAO, tam_t - _TITULO_PASSO), tam_s, escala, True
     if sub_colide and tam_t > _TITULO_MIN_CORRECAO:
         return max(_TITULO_MIN_CORRECAO, tam_t - _TITULO_PASSO), tam_s, escala, True
-    if (sub_colide or (fora and _toca_borda(m_sub))) and tam_s > _SUB_MIN_CORRECAO:
+    if (sub_colide or (fora and sub_extravasa)) and tam_s > _SUB_MIN_CORRECAO:
         return tam_t, max(_SUB_MIN_CORRECAO, tam_s - _SUB_PASSO), escala, True
     if peca_envolvida and escala > _ESCALA_MIN:
         return tam_t, tam_s, max(_ESCALA_MIN, round(escala - _ESCALA_PASSO, 4)), True
@@ -262,7 +274,7 @@ def montar(e: Entrada) -> Resultado:
     textos: Textos | None = None
     problemas: list[str] = []
 
-    def _avaliar() -> tuple[Textos, list[str], np.ndarray, np.ndarray]:
+    def _avaliar() -> tuple[Textos, list[str], np.ndarray, np.ndarray, bool, bool]:
         nonlocal escala_cache, peca_encaixada, pos_peca, mascara_peca, tam_t, tam_s
         if escala != escala_cache:
             peca_encaixada, pos_peca = encaixar_peca(peca_sem_fundo, escala=escala)
@@ -278,6 +290,7 @@ def montar(e: Entrada) -> Resultado:
         tam_t = t.tam_titulo
         tam_s = t.tam_sub
         m_titulo, m_sub = mascara_textos(t)
+        titulo_fora, sub_fora = textos_fora_canvas(t)
         probs = verificar(
             mascara_peca,
             m_titulo,
@@ -285,11 +298,13 @@ def montar(e: Entrada) -> Resultado:
             caixa_carro_tinta,
             caixa_cartao,
             caixa_etiqueta,
+            titulo_fora=titulo_fora,
+            sub_fora=sub_fora,
         )
-        return t, probs, m_titulo, m_sub
+        return t, probs, m_titulo, m_sub, titulo_fora, sub_fora
 
     for _ in range(_MAX_ITER):
-        textos, problemas, m_titulo, m_sub = _avaliar()
+        textos, problemas, m_titulo, m_sub, titulo_fora, sub_fora = _avaliar()
         if not problemas:
             break
         tam_t, tam_s, escala, ajustou = _proximo_ajuste(
@@ -300,11 +315,13 @@ def montar(e: Entrada) -> Resultado:
             mascara_peca,
             m_titulo,
             m_sub,
+            titulo_fora=titulo_fora,
+            sub_fora=sub_fora,
         )
         if not ajustou:
             break
     else:
-        textos, problemas, _, _ = _avaliar()
+        textos, problemas, _, _, _, _ = _avaliar()
 
     assert peca_encaixada is not None and textos is not None
     canvas = fundo_radial().convert("RGBA")

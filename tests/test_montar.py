@@ -22,7 +22,7 @@ from anuncio.layout import (
     TITULO_TAM,
 )
 from anuncio.montar import Entrada, Resultado, _proximo_ajuste, montar, verificar
-from anuncio.textos import mascara_textos, posicionar_textos
+from anuncio.textos import mascara_textos, posicionar_textos, textos_fora_canvas
 
 
 def _entradas_padrao(img_carro, img_peca, img_print, **overrides) -> Entrada:
@@ -67,6 +67,7 @@ def _problemas_finais(entrada: Entrada, resultado: Resultado) -> list[str]:
         tam_sub=resultado.tam_sub,
     )
     m_titulo, m_sub = mascara_textos(textos)
+    titulo_fora, sub_fora = textos_fora_canvas(textos)
     caixa_cartao = (
         CARTAO_POS[0],
         CARTAO_POS[1],
@@ -76,7 +77,16 @@ def _problemas_finais(entrada: Entrada, resultado: Resultado) -> list[str]:
     fonte_etiq = ImageFont.truetype(str(FONTE_EXTRABOLD), ETIQ_TAM)
     larg_etiq = max(ETIQ_ALT, round(fonte_etiq.getlength(entrada.etiqueta.upper()) + ETIQ_PAD))
     caixa_etiqueta = (ETIQ_POS[0], ETIQ_POS[1], ETIQ_POS[0] + larg_etiq, ETIQ_POS[1] + ETIQ_ALT)
-    return verificar(mascara_peca, m_titulo, m_sub, caixa_carro, caixa_cartao, caixa_etiqueta)
+    return verificar(
+        mascara_peca,
+        m_titulo,
+        m_sub,
+        caixa_carro,
+        caixa_cartao,
+        caixa_etiqueta,
+        titulo_fora=titulo_fora,
+        sub_fora=sub_fora,
+    )
 
 
 def test_montar_padrao(img_carro, img_peca, img_print):
@@ -318,3 +328,33 @@ def test_montar_recorte_explicito_nao_chama_detectar_area_foto(
         )
     )
     assert r.recorte_print == (100, 300, 450, 555)
+
+
+def test_subtitulo_gap_na_borda_reduz_sem_truncar(img_carro, img_print):
+    entrada = _entradas_padrao(
+        img_carro,
+        _peca_sem_tinta_no_meio(),
+        img_print,
+        subtitulo=["COMPATÍVEL COM NEW FIESTA SEDAN TITANIUM PLUS 2015 A 2020"],
+    )
+    r = montar(entrada)
+
+    assert r.tam_sub < SUB_TAM
+    assert r.escala_peca == 1.0
+    assert any("Subtítulo reduzido" in a for a in r.avisos)
+    assert not any("Não foi possível" in a for a in r.avisos)
+    assert _problemas_finais(entrada, r) == []
+
+
+def test_subtitulo_extremo_com_gap_na_borda_emite_aviso(img_carro, img_print):
+    entrada = _entradas_padrao(
+        img_carro,
+        _peca_sem_tinta_no_meio(),
+        img_print,
+        subtitulo=["COMPATÍVEL COM NEW FIESTA SEDAN TITANIUM PLUS COMPLETO AUTOMÁTICO 2015 A 2020"],
+    )
+    r = montar(entrada)
+
+    assert r.tam_sub == 26
+    assert r.escala_peca == 1.0
+    assert "Não foi possível eliminar: fora_do_canvas" in r.avisos
