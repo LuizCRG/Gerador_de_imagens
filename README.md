@@ -13,7 +13,7 @@ Aplicativo local (Windows) que monta a imagem principal `1024×1024` PNG para an
 2. Envie as fotos dos blocos ativados (arrastando ou clicando).
 3. *(Opcional)* Clique em **Remover fundo (IA)** abaixo de qualquer foto enviada (`Carro`, `Peça` ou `Print`) para recortar o objeto automaticamente com fundo transparente usando a Poof API. É possível alternar de volta com **Restaurar original** a qualquer momento.
 4. Preencha os textos e ajuste os **controles deslizantes de dimensões** (ou clique em **Restaurar padrões**).
-5. Se o print estiver ativo, arraste o retângulo `350:255` (ou redimensione pelo canto inferior direito) para enquadrar a região desejada.
+5. Em qualquer foto ativada (`Carro`, `Peça` ou `Print`), arraste o quadro de recorte (ou redimensione pelo canto) para centralizar/enquadrar manualmente a região desejada, ou clique em **Centralizar recorte** para voltar ao enquadramento padrão.
 6. Confira a prévia ao vivo (`1024×1024`) e os avisos de ajuste automático, se houver.
 7. Clique em **Baixar PNG**.
 

@@ -3,9 +3,11 @@
 
   const ASPECT_RATIO = 350 / 255;
   const MIN_CROP_WIDTH = 70;
+  const MIN_CROP_SIZE = 40;
   const DEBOUNCE_MS = 350;
   const HANDLE_SIZE = 14;
   const DEFAULT_META = "Arraste ou clique";
+  const TIPOS_IMAGEM = ["carro", "peca", "print"];
 
   const DEFAULTS = {
     larguraCarro: 500,
@@ -31,8 +33,8 @@
     objectUrls: { carro: null, peca: null, print: null },
     uploadSeq: { carro: 0, peca: 0, print: 0 },
     uploadAbort: { carro: null, peca: null, print: null },
-    printMeta: null,
-    crop: null,
+    cropMeta: { carro: null, peca: null, print: null },
+    crops: { carro: null, peca: null, print: null },
     drag: null,
     previewTimer: null,
     previewSeq: 0,
@@ -67,11 +69,20 @@
   const subtituloInput = document.getElementById("subtitulo");
   const subtituloContador = document.getElementById("subtitulo-contador");
   const etiquetaInput = document.getElementById("etiqueta");
-  const cropSection = document.getElementById("crop-section");
-  const cropInfo = document.getElementById("crop-info");
-  const cropCanvasWrap = document.getElementById("crop-canvas-wrap");
-  const cropCanvas = document.getElementById("crop-canvas");
-  const btnCentralizar = document.getElementById("btn-centralizar-recorte");
+  const cropEditors = Object.fromEntries(
+    TIPOS_IMAGEM.map((tipo) => [
+      tipo,
+      {
+        section: document.querySelector(`[data-crop-section="${tipo}"]`),
+        info: document.querySelector(`[data-crop-info="${tipo}"]`),
+        wrap: document.querySelector(`[data-crop-wrap="${tipo}"]`),
+        canvas: document.querySelector(`[data-crop-canvas="${tipo}"]`),
+        btnCentralizar: document.querySelector(`[data-btn-centralizar="${tipo}"]`),
+        fixedRatio: tipo === "print" ? ASPECT_RATIO : null,
+        maxH: tipo === "print" ? 360 : 240,
+      },
+    ])
+  );
   const erroBanner = document.getElementById("erro-banner");
   const previewStatus = document.getElementById("preview-status");
   const previewImg = document.getElementById("preview-img");
@@ -146,10 +157,15 @@
   }
 
   function syncBlockStates() {
+    const checkboxesPorTipo = {
+      carro: usarCarroInput.checked,
+      peca: usarPecaInput.checked,
+      print: usarPrintInput.checked,
+    };
     const mapa = [
-      ["carro", usarCarroInput.checked],
-      ["peca", usarPecaInput.checked],
-      ["print", usarPrintInput.checked],
+      ["carro", checkboxesPorTipo.carro],
+      ["peca", checkboxesPorTipo.peca],
+      ["print", checkboxesPorTipo.print],
       ["etiqueta", usarEtiquetaInput.checked],
       ["titulo", usarTituloInput.checked],
       ["subtitulo", usarSubtituloInput.checked],
@@ -160,10 +176,18 @@
         el.classList.toggle("is-disabled", !ativo);
       }
     }
-    const mostrarCrop = Boolean(usarPrintInput.checked && state.uploaded.print && state.printMeta);
-    cropSection.hidden = !mostrarCrop;
-    if (mostrarCrop) {
-      layoutCropCanvas();
+    for (const tipo of TIPOS_IMAGEM) {
+      const ed = cropEditors[tipo];
+      if (!ed || !ed.section) {
+        continue;
+      }
+      const mostrarCrop = Boolean(
+        checkboxesPorTipo[tipo] && state.uploaded[tipo] && state.cropMeta[tipo]
+      );
+      ed.section.hidden = !mostrarCrop;
+      if (mostrarCrop) {
+        layoutCropCanvas(tipo);
+      }
     }
   }
 
@@ -180,26 +204,55 @@
     subtituloContador.classList.toggle("is-over", count > 3);
   }
 
-  function rectFromRecorte(recorte, serverW, serverH) {
-    const [l, t, r] = recorte;
-    const maxW = Math.min(serverW, serverH * ASPECT_RATIO);
-    const w = clamp(Math.max(1, r - l), Math.min(MIN_CROP_WIDTH, maxW), maxW);
-    const h = w / ASPECT_RATIO;
+  function rectFromRecorte(tipo, recorte, serverW, serverH) {
+    const ed = cropEditors[tipo];
+    const [l, t, r, b] = recorte;
+    if (ed && ed.fixedRatio) {
+      const maxW = Math.min(serverW, serverH * ed.fixedRatio);
+      const w = clamp(Math.max(1, r - l), Math.min(MIN_CROP_WIDTH, maxW), maxW);
+      const h = w / ed.fixedRatio;
+      const x = clamp(l, 0, Math.max(0, serverW - w));
+      const y = clamp(t, 0, Math.max(0, serverH - h));
+      return { x, y, w, h };
+    }
+    const minW = Math.min(MIN_CROP_SIZE, serverW);
+    const minH = Math.min(MIN_CROP_SIZE, serverH);
+    const w = clamp(Math.max(1, r - l), minW, serverW);
+    const h = clamp(Math.max(1, b - t), minH, serverH);
     const x = clamp(l, 0, Math.max(0, serverW - w));
     const y = clamp(t, 0, Math.max(0, serverH - h));
     return { x, y, w, h };
   }
 
-  function recorteArrayFromCrop() {
-    if (!state.crop || !state.printMeta) {
+  function recorteArray(tipo) {
+    const meta = state.cropMeta[tipo];
+    const crop = state.crops[tipo];
+    if (!crop || !meta) {
       return null;
     }
-    const { width, height } = state.printMeta;
-    const l = clamp(Math.round(state.crop.x), 0, Math.max(0, width - 1));
-    const t = clamp(Math.round(state.crop.y), 0, Math.max(0, height - 1));
-    const r = Math.max(l + 1, clamp(Math.round(state.crop.x + state.crop.w), 1, width));
-    const b = Math.max(t + 1, clamp(Math.round(state.crop.y + state.crop.h), 1, height));
+    const { width, height } = meta;
+    const l = clamp(Math.round(crop.x), 0, Math.max(0, width - 1));
+    const t = clamp(Math.round(crop.y), 0, Math.max(0, height - 1));
+    const r = Math.max(l + 1, clamp(Math.round(crop.x + crop.w), 1, width));
+    const b = Math.max(t + 1, clamp(Math.round(crop.y + crop.h), 1, height));
     return [l, t, r, b];
+  }
+
+  function aplicarRecorteImagem(tipo, data, img) {
+    if (!img || !data.recorte) {
+      return;
+    }
+    if (state.drag && state.drag.tipo === tipo) {
+      state.drag = null;
+    }
+    state.cropMeta[tipo] = {
+      width: data.largura,
+      height: data.altura,
+      area: data.area || null,
+      initialRecorte: data.recorte,
+      image: img,
+    };
+    state.crops[tipo] = rectFromRecorte(tipo, data.recorte, data.largura, data.altura);
   }
 
   function buildPayload() {
@@ -207,7 +260,9 @@
       titulo: tituloInput.value,
       subtitulo: getSubtituloLinhas(),
       etiqueta: etiquetaInput.value,
-      recorte_print: usarPrintInput.checked ? recorteArrayFromCrop() : null,
+      recorte_carro: usarCarroInput.checked ? recorteArray("carro") : null,
+      recorte_peca: usarPecaInput.checked ? recorteArray("peca") : null,
+      recorte_print: usarPrintInput.checked ? recorteArray("print") : null,
       usar_carro: usarCarroInput.checked,
       usar_peca: usarPecaInput.checked,
       usar_print: usarPrintInput.checked,
@@ -333,50 +388,56 @@
     }
   }
 
-  function layoutCropCanvas() {
-    if (!state.printMeta || cropSection.hidden) {
+  function layoutCropCanvas(tipo) {
+    const ed = cropEditors[tipo];
+    const meta = state.cropMeta[tipo];
+    if (!ed || !ed.section || !ed.canvas || !ed.wrap || !meta || ed.section.hidden) {
       return;
     }
-    const availableW = Math.max(220, (cropCanvasWrap.clientWidth || 420) - 12);
-    const maxH = 380;
-    const scale = Math.min(availableW / state.printMeta.width, maxH / state.printMeta.height);
-    const displayW = Math.max(1, Math.round(state.printMeta.width * scale));
-    const displayH = Math.max(1, Math.round(state.printMeta.height * scale));
+    const availableW = Math.max(220, (ed.wrap.clientWidth || 420) - 12);
+    const scale = Math.min(availableW / meta.width, ed.maxH / meta.height);
+    const displayW = Math.max(1, Math.round(meta.width * scale));
+    const displayH = Math.max(1, Math.round(meta.height * scale));
     const dpr = window.devicePixelRatio || 1;
 
-    cropCanvas.width = Math.round(displayW * dpr);
-    cropCanvas.height = Math.round(displayH * dpr);
-    cropCanvas.style.width = `${displayW}px`;
-    cropCanvas.style.height = `${displayH}px`;
-    renderCropCanvas();
+    ed.canvas.width = Math.round(displayW * dpr);
+    ed.canvas.height = Math.round(displayH * dpr);
+    ed.canvas.style.width = `${displayW}px`;
+    ed.canvas.style.height = `${displayH}px`;
+    renderCropCanvas(tipo);
   }
 
-  function renderCropCanvas() {
-    if (!state.printMeta || !state.crop) {
+  function renderCropCanvas(tipo) {
+    const ed = cropEditors[tipo];
+    const meta = state.cropMeta[tipo];
+    const crop = state.crops[tipo];
+    if (!ed || !ed.canvas || !meta || !crop) {
       return;
     }
-    const displayW = parseFloat(cropCanvas.style.width) || cropCanvas.clientWidth;
-    const displayH = parseFloat(cropCanvas.style.height) || cropCanvas.clientHeight;
+    const canvas = ed.canvas;
+    const displayW = parseFloat(canvas.style.width) || canvas.clientWidth;
+    const displayH = parseFloat(canvas.style.height) || canvas.clientHeight;
     if (!displayW || !displayH) {
       return;
     }
 
     const dpr = window.devicePixelRatio || 1;
-    const ctx = cropCanvas.getContext("2d");
+    const ctx = canvas.getContext("2d");
     if (!ctx) {
       return;
     }
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, displayW, displayH);
-    ctx.drawImage(state.printMeta.image, 0, 0, displayW, displayH);
+    ctx.fillStyle = "#f1f5f9";
+    ctx.fillRect(0, 0, displayW, displayH);
+    ctx.drawImage(meta.image, 0, 0, displayW, displayH);
 
-    const scaleX = displayW / state.printMeta.width;
-    const scaleY = displayH / state.printMeta.height;
-    const rx = state.crop.x * scaleX;
-    const ry = state.crop.y * scaleY;
-    const rw = state.crop.w * scaleX;
-    const rh = state.crop.h * scaleY;
+    const scaleX = displayW / meta.width;
+    const scaleY = displayH / meta.height;
+    const rx = crop.x * scaleX;
+    const ry = crop.y * scaleY;
+    const rw = crop.w * scaleX;
+    const rh = crop.h * scaleY;
 
     ctx.fillStyle = "rgba(15, 23, 42, 0.58)";
     ctx.fillRect(0, 0, displayW, Math.max(0, ry));
@@ -418,26 +479,32 @@
     ctx.lineTo(hx + HANDLE_SIZE - 4, hy + 4);
     ctx.stroke();
 
-    cropInfo.textContent =
-      `Proporção 350:255 • ${Math.round(state.crop.w)} × ${Math.round(state.crop.h)} px` +
-      ` (x=${Math.round(state.crop.x)}, y=${Math.round(state.crop.y)})`;
+    if (ed.info) {
+      const prefixo = ed.fixedRatio ? "Proporção 350:255" : "Recorte livre";
+      ed.info.textContent =
+        `${prefixo} • ${Math.round(crop.w)} × ${Math.round(crop.h)} px` +
+        ` (x=${Math.round(crop.x)}, y=${Math.round(crop.y)})`;
+    }
   }
 
-  function getPointerInfo(e) {
-    const rect = cropCanvas.getBoundingClientRect();
-    if (!rect.width || !rect.height) {
+  function getPointerInfo(tipo, e) {
+    const ed = cropEditors[tipo];
+    const meta = state.cropMeta[tipo];
+    const crop = state.crops[tipo];
+    const rect = ed.canvas.getBoundingClientRect();
+    if (!rect.width || !rect.height || !meta || !crop) {
       return { sx: 0, sy: 0, inHandle: false, inBox: false };
     }
     const dx = e.clientX - rect.left;
     const dy = e.clientY - rect.top;
-    const { width: serverW, height: serverH } = state.printMeta;
+    const { width: serverW, height: serverH } = meta;
     const sx = dx * (serverW / rect.width);
     const sy = dy * (serverH / rect.height);
 
-    const rx = state.crop.x * (rect.width / serverW);
-    const ry = state.crop.y * (rect.height / serverH);
-    const rw = state.crop.w * (rect.width / serverW);
-    const rh = state.crop.h * (rect.height / serverH);
+    const rx = crop.x * (rect.width / serverW);
+    const ry = crop.y * (rect.height / serverH);
+    const rw = crop.w * (rect.width / serverW);
+    const rh = crop.h * (rect.height / serverH);
 
     const hxMin = Math.max(rx + rw * 0.5, rx + rw - 20);
     const hyMin = Math.max(ry + rh * 0.5, ry + rh - 20);
@@ -447,101 +514,129 @@
     return { sx, sy, inHandle, inBox };
   }
 
-  cropCanvas.addEventListener("pointerdown", (e) => {
-    if (!state.crop || !state.printMeta) {
+  function bindCropEditor(tipo) {
+    const ed = cropEditors[tipo];
+    if (!ed || !ed.canvas) {
       return;
     }
-    if (e.pointerType === "mouse" && e.button !== 0) {
-      return;
-    }
-    const { sx, sy, inHandle, inBox } = getPointerInfo(e);
-    if (!inHandle && !inBox) {
-      return;
+    const canvas = ed.canvas;
+
+    canvas.addEventListener("pointerdown", (e) => {
+      if (!state.crops[tipo] || !state.cropMeta[tipo]) {
+        return;
+      }
+      if (e.pointerType === "mouse" && e.button !== 0) {
+        return;
+      }
+      const { sx, sy, inHandle, inBox } = getPointerInfo(tipo, e);
+      if (!inHandle && !inBox) {
+        return;
+      }
+
+      e.preventDefault();
+      canvas.setPointerCapture(e.pointerId);
+      const mode = inHandle ? "resize" : "move";
+      state.drag = {
+        tipo,
+        mode,
+        pointerId: e.pointerId,
+        startX: sx,
+        startY: sy,
+        startCrop: { ...state.crops[tipo] },
+      };
+      canvas.style.cursor = mode === "resize" ? "nwse-resize" : "grabbing";
+    });
+
+    canvas.addEventListener("pointermove", (e) => {
+      const meta = state.cropMeta[tipo];
+      const crop = state.crops[tipo];
+      if (!crop || !meta) {
+        return;
+      }
+      const { sx, sy, inHandle, inBox } = getPointerInfo(tipo, e);
+
+      if (!state.drag || state.drag.tipo !== tipo) {
+        canvas.style.cursor = inHandle ? "nwse-resize" : inBox ? "grab" : "default";
+        return;
+      }
+      if (e.pointerId !== state.drag.pointerId) {
+        return;
+      }
+
+      const { width: serverW, height: serverH } = meta;
+      const { startCrop, startX, startY, mode } = state.drag;
+
+      if (mode === "move") {
+        const maxX = Math.max(0, serverW - startCrop.w);
+        const maxY = Math.max(0, serverH - startCrop.h);
+        crop.x = clamp(startCrop.x + (sx - startX), 0, maxX);
+        crop.y = clamp(startCrop.y + (sy - startY), 0, maxY);
+      } else {
+        const dx = sx - startX;
+        const dy = sy - startY;
+        if (ed.fixedRatio) {
+          const wFromX = startCrop.w + dx;
+          const wFromY = (startCrop.h + dy) * ed.fixedRatio;
+          const candidateW = Math.abs(dx) / 350 >= Math.abs(dy) / 255 ? wFromX : wFromY;
+          const maxW = Math.min(serverW - startCrop.x, (serverH - startCrop.y) * ed.fixedRatio);
+          const minW = Math.min(MIN_CROP_WIDTH, maxW);
+          const nextW = clamp(candidateW, minW, maxW);
+          crop.w = nextW;
+          crop.h = nextW / ed.fixedRatio;
+        } else {
+          const maxW = Math.max(1, serverW - startCrop.x);
+          const maxH = Math.max(1, serverH - startCrop.y);
+          const minW = Math.min(MIN_CROP_SIZE, maxW);
+          const minH = Math.min(MIN_CROP_SIZE, maxH);
+          crop.w = clamp(startCrop.w + dx, minW, maxW);
+          crop.h = clamp(startCrop.h + dy, minH, maxH);
+        }
+      }
+
+      renderCropCanvas(tipo);
+      schedulePreview();
+    });
+
+    function endCropDrag(e) {
+      if (!state.drag || state.drag.tipo !== tipo || e.pointerId !== state.drag.pointerId) {
+        return;
+      }
+      if (canvas.hasPointerCapture && canvas.hasPointerCapture(e.pointerId)) {
+        canvas.releasePointerCapture(e.pointerId);
+      }
+      state.drag = null;
+      if (state.crops[tipo] && state.cropMeta[tipo]) {
+        const { inHandle, inBox } = getPointerInfo(tipo, e);
+        canvas.style.cursor = inHandle ? "nwse-resize" : inBox ? "grab" : "default";
+      } else {
+        canvas.style.cursor = "default";
+      }
     }
 
-    e.preventDefault();
-    cropCanvas.setPointerCapture(e.pointerId);
-    const mode = inHandle ? "resize" : "move";
-    state.drag = {
-      mode,
-      pointerId: e.pointerId,
-      startX: sx,
-      startY: sy,
-      startCrop: { ...state.crop },
-    };
-    cropCanvas.style.cursor = mode === "resize" ? "nwse-resize" : "grabbing";
-  });
+    canvas.addEventListener("pointerup", endCropDrag);
+    canvas.addEventListener("pointercancel", endCropDrag);
 
-  cropCanvas.addEventListener("pointermove", (e) => {
-    if (!state.crop || !state.printMeta) {
-      return;
-    }
-    const { sx, sy, inHandle, inBox } = getPointerInfo(e);
-
-    if (!state.drag) {
-      cropCanvas.style.cursor = inHandle ? "nwse-resize" : inBox ? "grab" : "default";
-      return;
-    }
-    if (e.pointerId !== state.drag.pointerId) {
-      return;
-    }
-
-    const { width: serverW, height: serverH } = state.printMeta;
-    const { startCrop, startX, startY, mode } = state.drag;
-
-    if (mode === "move") {
-      const maxX = Math.max(0, serverW - startCrop.w);
-      const maxY = Math.max(0, serverH - startCrop.h);
-      state.crop.x = clamp(startCrop.x + (sx - startX), 0, maxX);
-      state.crop.y = clamp(startCrop.y + (sy - startY), 0, maxY);
-    } else {
-      const dx = sx - startX;
-      const dy = sy - startY;
-      const wFromX = startCrop.w + dx;
-      const wFromY = (startCrop.h + dy) * ASPECT_RATIO;
-      const candidateW = Math.abs(dx) / 350 >= Math.abs(dy) / 255 ? wFromX : wFromY;
-      const maxW = Math.min(serverW - startCrop.x, (serverH - startCrop.y) * ASPECT_RATIO);
-      const minW = Math.min(MIN_CROP_WIDTH, maxW);
-      const nextW = clamp(candidateW, minW, maxW);
-      state.crop.w = nextW;
-      state.crop.h = nextW / ASPECT_RATIO;
-    }
-
-    renderCropCanvas();
-    schedulePreview();
-  });
-
-  function endCropDrag(e) {
-    if (!state.drag || e.pointerId !== state.drag.pointerId) {
-      return;
-    }
-    if (cropCanvas.hasPointerCapture && cropCanvas.hasPointerCapture(e.pointerId)) {
-      cropCanvas.releasePointerCapture(e.pointerId);
-    }
-    state.drag = null;
-    if (state.crop && state.printMeta) {
-      const { inHandle, inBox } = getPointerInfo(e);
-      cropCanvas.style.cursor = inHandle ? "nwse-resize" : inBox ? "grab" : "default";
-    } else {
-      cropCanvas.style.cursor = "default";
+    if (ed.btnCentralizar) {
+      ed.btnCentralizar.addEventListener("click", () => {
+        const meta = state.cropMeta[tipo];
+        if (!meta) {
+          return;
+        }
+        state.crops[tipo] = rectFromRecorte(
+          tipo,
+          meta.initialRecorte,
+          meta.width,
+          meta.height
+        );
+        renderCropCanvas(tipo);
+        schedulePreview();
+      });
     }
   }
 
-  cropCanvas.addEventListener("pointerup", endCropDrag);
-  cropCanvas.addEventListener("pointercancel", endCropDrag);
-
-  btnCentralizar.addEventListener("click", () => {
-    if (!state.printMeta) {
-      return;
-    }
-    state.crop = rectFromRecorte(
-      state.printMeta.initialRecorte,
-      state.printMeta.width,
-      state.printMeta.height
-    );
-    renderCropCanvas();
-    schedulePreview();
-  });
+  for (const tipo of TIPOS_IMAGEM) {
+    bindCropEditor(tipo);
+  }
 
   async function uploadImage(tipo, file) {
     if (!file) {
@@ -584,25 +679,23 @@
       }
 
       const nextUrl = URL.createObjectURL(file);
-      let loadedPrintImg = null;
-      if (tipo === "print") {
-        try {
-          loadedPrintImg = await loadHtmlImage(nextUrl);
-        } catch {
-          URL.revokeObjectURL(nextUrl);
-          if (seq === state.uploadSeq[tipo]) {
-            metaEl.textContent = state.metaText[tipo];
-            showError(
-              "Não foi possível exibir esta imagem no navegador (use PNG ou JPEG RGB).",
-              "upload"
-            );
-          }
-          return;
+      let loadedImg = null;
+      try {
+        loadedImg = await loadHtmlImage(nextUrl);
+      } catch {
+        URL.revokeObjectURL(nextUrl);
+        if (seq === state.uploadSeq[tipo]) {
+          metaEl.textContent = state.metaText[tipo];
+          showError(
+            "Não foi possível exibir esta imagem no navegador (use PNG ou JPEG RGB).",
+            "upload"
+          );
         }
-        if (seq !== state.uploadSeq[tipo]) {
-          URL.revokeObjectURL(nextUrl);
-          return;
-        }
+        return;
+      }
+      if (seq !== state.uploadSeq[tipo]) {
+        URL.revokeObjectURL(nextUrl);
+        return;
       }
 
       if (state.objectUrls[tipo]) {
@@ -624,18 +717,8 @@
       updateAiBgButton(tipo);
       clearError();
 
-      if (tipo === "print" && loadedPrintImg) {
-        state.drag = null;
-        state.printMeta = {
-          width: data.largura,
-          height: data.altura,
-          area: data.area,
-          initialRecorte: data.recorte,
-          image: loadedPrintImg,
-        };
-        state.crop = rectFromRecorte(data.recorte, data.largura, data.altura);
-        syncBlockStates();
-      }
+      aplicarRecorteImagem(tipo, data, loadedImg);
+      syncBlockStates();
 
       schedulePreview();
     } catch (err) {
@@ -943,12 +1026,9 @@
       }
 
       const dataUrl = `data:image/png;base64,${data.png}`;
-      let loadedPrintImg = null;
-      if (tipo === "print") {
-        loadedPrintImg = await loadHtmlImage(dataUrl);
-        if (state.uploadSeq[tipo] !== reqSeq) {
-          return;
-        }
+      const loadedImg = await loadHtmlImage(dataUrl);
+      if (state.uploadSeq[tipo] !== reqSeq) {
+        return;
       }
 
       if (state.objectUrls[tipo]) {
@@ -972,18 +1052,8 @@
         metaEl.title = resumo;
       }
 
-      if (tipo === "print" && loadedPrintImg) {
-        state.drag = null;
-        state.printMeta = {
-          width: data.largura,
-          height: data.altura,
-          area: data.area,
-          initialRecorte: data.recorte,
-          image: loadedPrintImg,
-        };
-        state.crop = rectFromRecorte(data.recorte, data.largura, data.altura);
-        syncBlockStates();
-      }
+      aplicarRecorteImagem(tipo, data, loadedImg);
+      syncBlockStates();
 
       clearError();
       clearSaveStatus();
@@ -1039,9 +1109,18 @@
   }
 
   if (typeof ResizeObserver !== "undefined") {
-    new ResizeObserver(() => layoutCropCanvas()).observe(cropCanvasWrap);
+    for (const tipo of TIPOS_IMAGEM) {
+      const wrap = cropEditors[tipo] && cropEditors[tipo].wrap;
+      if (wrap) {
+        new ResizeObserver(() => layoutCropCanvas(tipo)).observe(wrap);
+      }
+    }
   } else {
-    window.addEventListener("resize", layoutCropCanvas);
+    window.addEventListener("resize", () => {
+      for (const tipo of TIPOS_IMAGEM) {
+        layoutCropCanvas(tipo);
+      }
+    });
   }
 
   updateSubtitleCounter();

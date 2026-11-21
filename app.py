@@ -54,19 +54,29 @@ def _parse_num(
     return round(valor) if inteiro else float(valor)
 
 
-def _parse_recorte(valor: object) -> tuple[int, int, int, int] | None:
+def _parse_recorte(
+    valor: object, campo: str = "recorte_print"
+) -> tuple[int, int, int, int] | None:
     if valor is None:
         return None
     if not isinstance(valor, (list, tuple)) or len(valor) != 4:
-        raise ValueError("recorte_print deve conter 4 números")
+        raise ValueError(f"{campo} deve conter 4 números")
     coords: list[int] = []
     for item in valor:
         if isinstance(item, bool) or not isinstance(item, (int, float)):
-            raise ValueError("recorte_print deve conter 4 números")
+            raise ValueError(f"{campo} deve conter 4 números")
         if isinstance(item, float) and not math.isfinite(item):
-            raise ValueError("recorte_print contém valor inválido")
+            raise ValueError(f"{campo} contém valor inválido")
         coords.append(round(item))
     return (coords[0], coords[1], coords[2], coords[3])
+
+
+def _metadados_recorte_imagem(tipo: str, img: Image.Image) -> dict[str, object]:
+    if tipo == "print":
+        area = detectar_area_foto(img)
+        recorte = normalizar_recorte(None, img.size, area)
+        return {"area": list(area), "recorte": list(recorte)}
+    return {"recorte": [0, 0, img.width, img.height]}
 
 
 def _slugify(titulo: str) -> str:
@@ -121,7 +131,9 @@ def _montar_da_requisicao(imagens: dict[str, Image.Image]) -> tuple[Resultado, s
     if not isinstance(etiqueta, str):
         raise ValueError("Etiqueta inválida")
 
-    recorte = _parse_recorte(dados.get("recorte_print"))
+    recorte = _parse_recorte(dados.get("recorte_print"), "recorte_print")
+    recorte_carro = _parse_recorte(dados.get("recorte_carro"), "recorte_carro")
+    recorte_peca = _parse_recorte(dados.get("recorte_peca"), "recorte_peca")
     entrada = Entrada(
         carro=imagens.get("carro"),
         peca=imagens.get("peca"),
@@ -130,6 +142,8 @@ def _montar_da_requisicao(imagens: dict[str, Image.Image]) -> tuple[Resultado, s
         subtitulo=subtitulo,
         etiqueta=etiqueta,
         recorte_print=recorte,
+        recorte_carro=recorte_carro,
+        recorte_peca=recorte_peca,
         usar_carro=usar_carro,
         usar_peca=usar_peca,
         usar_print=usar_print,
@@ -197,11 +211,7 @@ def criar_app(
         app.config["IMAGENS_SEM_FUNDO"].pop(tipo, None)
         app.config["IMAGENS"][tipo] = img
         resposta: dict[str, object] = {"largura": img.width, "altura": img.height}
-        if tipo == "print":
-            area = detectar_area_foto(img)
-            recorte = normalizar_recorte(None, img.size, area)
-            resposta["area"] = list(area)
-            resposta["recorte"] = list(recorte)
+        resposta.update(_metadados_recorte_imagem(tipo, img))
         return jsonify(resposta)
 
     @app.post("/api/imagem/<tipo>/remover-fundo")
@@ -244,11 +254,7 @@ def criar_app(
             "altura": ativa.height,
             "fundo_removido": fundo_removido,
         }
-        if tipo == "print":
-            area = detectar_area_foto(ativa)
-            recorte = normalizar_recorte(None, ativa.size, area)
-            resposta["area"] = list(area)
-            resposta["recorte"] = list(recorte)
+        resposta.update(_metadados_recorte_imagem(tipo, ativa))
         return jsonify(resposta)
 
     @app.get("/api/config/ia")

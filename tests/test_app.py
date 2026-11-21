@@ -298,6 +298,12 @@ def test_pagina_inicial(client):
         'class="btn btn-secondary btn-remover-fundo" data-tipo="carro"',
         'class="btn btn-secondary btn-remover-fundo" data-tipo="peca"',
         'class="btn btn-secondary btn-remover-fundo" data-tipo="print"',
+        'id="crop-section-carro"',
+        'id="crop-canvas-carro"',
+        'id="btn-centralizar-carro"',
+        'id="crop-section-peca"',
+        'id="crop-canvas-peca"',
+        'id="btn-centralizar-peca"',
     ):
         assert marcador in html
     assert "Poof API" in html
@@ -499,5 +505,62 @@ def test_config_ia_nao_expoe_chave_e_salva_env(tmp_path, monkeypatch):
     assert r1.status_code == 200
     assert r1.json == {"configurada": True}
     assert "segredo" not in r1.get_data(as_text=True)
+
+
+def test_upload_e_remover_fundo_devolvem_recorte_e_previa_aplica_carro_peca(tmp_path):
+    import numpy as np
+    from PIL import ImageDraw
+
+    carro = Image.new("RGB", (400, 200), (255, 255, 255))
+    dc = ImageDraw.Draw(carro)
+    dc.rectangle([20, 40, 150, 160], fill=(0, 140, 0))
+    dc.rectangle([250, 40, 380, 160], fill=(220, 20, 20))
+
+    peca = Image.new("RGB", (400, 200), (255, 255, 255))
+    dp = ImageDraw.Draw(peca)
+    dp.rectangle([20, 40, 140, 160], fill=(20, 40, 210))
+    dp.rectangle([260, 40, 380, 160], fill=(240, 180, 10))
+
+    def fake_removedor(img, **_kwargs):
+        return img.copy()
+
+    app = criar_app(pasta_saida=tmp_path, removedor_fundo=fake_removedor, env_path=tmp_path / ".env")
+    client = app.test_client()
+
+    rc = client.post("/api/imagem/carro", data={"arquivo": _para_upload(carro)})
+    assert rc.status_code == 200
+    assert rc.json["recorte"] == [0, 0, 400, 200]
+
+    rp = client.post("/api/imagem/peca", data={"arquivo": _para_upload(peca)})
+    assert rp.status_code == 200
+    assert rp.json["recorte"] == [0, 0, 400, 200]
+
+    rr = client.post("/api/imagem/peca/remover-fundo", json={"usar": True})
+    assert rr.status_code == 200
+    assert rr.json["recorte"] == [0, 0, 400, 200]
+
+    prev = client.post(
+        "/api/previa",
+        json={
+            "titulo": "Teste",
+            "usar_print": False,
+            "recorte_carro": [0, 0, 200, 200],
+            "recorte_peca": [220, 0, 400, 200],
+        },
+    )
+    assert prev.status_code == 200
+    out = Image.open(BytesIO(base64.b64decode(prev.json["png"])))
+    arr = np.asarray(out)
+    assert np.any(arr[:450, :600, 1] > arr[:450, :600, 0] + 60)
+    assert not np.any((arr[:450, :600, 0] > 180) & (arr[:450, :600, 1] < 60))
+    assert np.any((arr[:, 560:, 0] > 190) & (arr[:, 560:, 2] < 60))
+    assert not np.any((arr[:, 560:, 2] > 160) & (arr[:, 560:, 0] < 60))
+
+    invalido = client.post(
+        "/api/previa",
+        json={"titulo": "Teste", "usar_print": False, "recorte_carro": [1, 2]},
+    )
+    assert invalido.status_code == 400
+    assert "recorte_carro" in invalido.json["erro"]
 
 

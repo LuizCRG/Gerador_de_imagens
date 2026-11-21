@@ -79,6 +79,8 @@ class Entrada:
     subtitulo: list[str] = field(default_factory=list)
     etiqueta: str = ""
     recorte_print: tuple[int, int, int, int] | None = None
+    recorte_carro: tuple[int, int, int, int] | None = None
+    recorte_peca: tuple[int, int, int, int] | None = None
     usar_carro: bool = True
     usar_peca: bool = True
     usar_print: bool = True
@@ -103,6 +105,29 @@ class Resultado:
     tam_sub: int
     escala_peca: float
     recorte_print: tuple[int, int, int, int] | None
+    recorte_carro: tuple[int, int, int, int] | None = None
+    recorte_peca: tuple[int, int, int, int] | None = None
+
+
+def _recortar_entrada(
+    img: Image.Image,
+    recorte: tuple[int, int, int, int] | None,
+) -> tuple[Image.Image, tuple[int, int, int, int] | None]:
+    """Normaliza um retângulo livre dentro da imagem e aplica crop quando informado."""
+    if recorte is None:
+        return img, None
+    img_w, img_h = img.size
+    if img_w <= 0 or img_h <= 0:
+        return img, (0, 0, img_w, img_h)
+    l0, t0, r0, b0 = recorte
+    l, r = (l0, r0) if l0 <= r0 else (r0, l0)
+    t, b = (t0, b0) if t0 <= b0 else (b0, t0)
+    l = max(0, min(l, img_w - 1))
+    t = max(0, min(t, img_h - 1))
+    r = max(l + 1, min(r, img_w))
+    b = max(t + 1, min(b, img_h))
+    caixa = (l, t, r, b)
+    return img.crop(caixa), caixa
 
 
 def _caixa_tinta_carro(carro_rec: Image.Image) -> tuple[int, int, int, int]:
@@ -340,13 +365,21 @@ def montar(e: Entrada) -> Resultado:
     if e.usar_print and e.print_img is None:
         raise ValueError("Envie o print de aplicação")
 
-    peca_sem_fundo = remover_fundo_branco(e.peca) if e.usar_peca and e.peca is not None else None
+    if e.usar_peca and e.peca is not None:
+        img_peca, rec_peca = _recortar_entrada(e.peca, e.recorte_peca)
+        peca_sem_fundo = remover_fundo_branco(img_peca)
+    else:
+        rec_peca = None
+        peca_sem_fundo = None
+
     if e.usar_carro and e.carro is not None:
+        img_carro, rec_carro = _recortar_entrada(e.carro, e.recorte_carro)
         altura_max_carro = max(1, round(CARRO_ALT_MAX * e.largura_carro / CARRO_LARG))
-        carro_rec = recortar_carro(e.carro, largura=e.largura_carro, altura_max=altura_max_carro)
+        carro_rec = recortar_carro(img_carro, largura=e.largura_carro, altura_max=altura_max_carro)
         base_carro = CARRO_POS[1] + carro_rec.height
         caixa_carro_tinta = _caixa_tinta_carro(carro_rec)
     else:
+        rec_carro = None
         carro_rec = None
         base_carro = _TOPO_SEM_CARRO
         caixa_carro_tinta = (0, 0, 0, 0)
@@ -528,4 +561,6 @@ def montar(e: Entrada) -> Resultado:
         tam_sub=textos.tam_sub,
         escala_peca=escala,
         recorte_print=recorte,
+        recorte_carro=rec_carro,
+        recorte_peca=rec_peca,
     )

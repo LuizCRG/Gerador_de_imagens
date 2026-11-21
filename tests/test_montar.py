@@ -505,3 +505,62 @@ def test_montar_tudo_desativado_erro():
                 usar_subtitulo=False,
             )
         )
+
+
+def test_montar_respeita_recorte_carro_e_peca():
+    from PIL import ImageDraw
+
+    carro = Image.new("RGB", (400, 200), (255, 255, 255))
+    dc = ImageDraw.Draw(carro)
+    dc.rectangle([20, 40, 150, 160], fill=(0, 140, 0))
+    dc.rectangle([250, 40, 380, 160], fill=(220, 20, 20))
+
+    peca = Image.new("RGB", (400, 200), (255, 255, 255))
+    dp = ImageDraw.Draw(peca)
+    dp.rectangle([20, 40, 140, 160], fill=(20, 40, 210))
+    dp.rectangle([260, 40, 380, 160], fill=(240, 180, 10))
+
+    r = montar(
+        Entrada(
+            carro=carro,
+            peca=peca,
+            print_img=None,
+            titulo="Teste",
+            subtitulo=[],
+            etiqueta="",
+            usar_print=False,
+            recorte_carro=(0, 0, 200, 200),
+            recorte_peca=(220, 0, 400, 200),
+        )
+    )
+    assert r.recorte_carro == (0, 0, 200, 200)
+    assert r.recorte_peca == (220, 0, 400, 200)
+
+    arr = np.asarray(r.imagem)
+    topo_carro = arr[:450, :600]
+    assert np.any((topo_carro[..., 1] > topo_carro[..., 0] + 60))
+    assert not np.any((topo_carro[..., 0] > 180) & (topo_carro[..., 1] < 60))
+
+    lado_peca = arr[:, 560:]
+    assert np.any((lado_peca[..., 0] > 190) & (lado_peca[..., 2] < 60))
+    assert not np.any((lado_peca[..., 2] > 160) & (lado_peca[..., 0] < 60))
+
+
+def test_montar_recorte_carro_peca_limites_e_vazio():
+    branco_c = Image.new("RGB", (300, 180), (255, 255, 255))
+    branco_p = Image.new("RGBA", (300, 180), (255, 255, 255, 0))
+
+    r = montar(
+        Entrada(
+            carro=branco_c,
+            peca=branco_p,
+            print_img=None,
+            titulo="Teste",
+            usar_print=False,
+            recorte_carro=(-10, -20, 9999, 9999),
+            recorte_peca=(280, 170, 20, 30),
+        )
+    )
+    assert r.recorte_carro == (0, 0, 300, 180)
+    assert r.recorte_peca == (20, 30, 280, 170)
+    assert r.imagem.size == (1024, 1024)
