@@ -1,41 +1,23 @@
-"""Remoção de fundo de fotos sob demanda via Nano Banana (google-genai)."""
+"""Remoção de fundo de fotos sob demanda via Poof API."""
 
-import base64
 import io
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
-from google import genai
-from google.genai import types
 import numpy as np
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
+import requests
 from scipy.ndimage import label
 
 from anuncio.layout import RAIZ_PROJETO
 
-MODELO_NANO_BANANA = "gemini-nano-banana-2.1"
+ENDPOINT_POOF_API = "https://api.poof.bg/v1/remove"
 _ARQUIVO_ENV_PADRAO = RAIZ_PROJETO / ".env"
-_NOME_CHAVE = "GEMINI_API_KEY"
+_NOME_CHAVE = "POOF_API_KEY"
 _LADO_MAX_ENVIO = 2048
 _LIMIAR_BRANCO_BORDA = 245
-_TIMEOUT_REQUISICAO_MS = 60_000
-
-_PROMPT_CARRO = (
-    "Remove the entire background behind the main vehicle. "
-    "Isolate ONLY the vehicle cleanly on a pure solid white (#FFFFFF) background, "
-    "preserving its natural soft ground contact shadow directly under the tires. "
-    "Keep the exact vehicle appearance, angles, colors, reflections, proportions, "
-    "and details completely unchanged without adding or modifying any car parts."
-)
-
-_PROMPT_PECA = (
-    "Remove the entire background behind the main automotive part/product. "
-    "Isolate ONLY the product cleanly on a pure solid white (#FFFFFF) background, "
-    "including clean interior holes or cutouts showing pure white (#FFFFFF). "
-    "Keep the exact product shape, texture, colors, proportions, and details "
-    "completely unchanged without adding text, shadows, or altering the part."
-)
+_TIMEOUT_REQUISICAO_SEG = 60
 
 
 def _ler_env(env_path: Path) -> str:
@@ -52,7 +34,7 @@ def _ler_env(env_path: Path) -> str:
 
 
 def obter_chave_api(env_path: Path = _ARQUIVO_ENV_PADRAO) -> str:
-    """Lê a chave da API do ambiente ou do arquivo .env local."""
+    """Lê a chave da Poof API do ambiente ou do arquivo .env local."""
     do_ambiente = os.environ.get(_NOME_CHAVE, "").strip()
     if do_ambiente:
         return do_ambiente
@@ -60,7 +42,7 @@ def obter_chave_api(env_path: Path = _ARQUIVO_ENV_PADRAO) -> str:
 
 
 def salvar_chave_api(chave: str, env_path: Path = _ARQUIVO_ENV_PADRAO) -> None:
-    """Salva ou atualiza GEMINI_API_KEY no arquivo .env local preservando outras linhas."""
+    """Salva ou atualiza POOF_API_KEY no arquivo .env local preservando outras linhas."""
     limpa = chave.strip()
     if not limpa or "\n" in limpa or "\r" in limpa:
         raise ValueError("Chave da API inválida")
@@ -88,26 +70,22 @@ def salvar_chave_api(chave: str, env_path: Path = _ARQUIVO_ENV_PADRAO) -> None:
 
 
 def _preparar_imagem_envio(img: Image.Image) -> bytes:
-    rgb = img if img.mode == "RGB" else img.convert("RGB")
-    if max(rgb.size) > _LADO_MAX_ENVIO:
-        escala = _LADO_MAX_ENVIO / max(rgb.size)
-        novo_tam = (max(1, round(rgb.width * escala)), max(1, round(rgb.height * escala)))
-        rgb = rgb.resize(novo_tam, Image.Resampling.LANCZOS)
+    modo = "RGBA" if img.has_transparency_data else "RGB"
+    preparada = img if img.mode == modo else img.convert(modo)
+    if max(preparada.size) > _LADO_MAX_ENVIO:
+        escala = _LADO_MAX_ENVIO / max(preparada.size)
+        novo_tam = (
+            max(1, round(preparada.width * escala)),
+            max(1, round(preparada.height * escala)),
+        )
+        preparada = preparada.resize(novo_tam, Image.Resampling.LANCZOS)
     buf = io.BytesIO()
-    rgb.save(buf, format="PNG")
+    preparada.save(buf, format="PNG")
     return buf.getvalue()
 
 
 def _limpar_fundo_borda_branca(img: Image.Image) -> Image.Image:
-    if img.has_transparency_data:
-        rgba = img.convert("RGBA")
-        fundo = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
-        rgb = Image.alpha_composite(fundo, rgba).convert("RGB")
-    elif img.mode != "RGB":
-        rgb = img.convert("RGB")
-    else:
-        rgb = img.copy()
-
+    rgb = img.copy() if img.mode == "RGB" else img.convert("RGB")
     arr = np.asarray(rgb).copy()
     quase_branco = arr.min(axis=2) >= _LIMIAR_BRANCO_BORDA
     rotulos, _ = label(quase_branco)
@@ -119,36 +97,31 @@ def _limpar_fundo_borda_branca(img: Image.Image) -> Image.Image:
     return Image.fromarray(arr, mode="RGB")
 
 
-def _traduzir_erro_ia(exc: Exception) -> str:
-    nome_cls = type(exc).__name__
-    status = getattr(exc, "status_code", None)
-    lower = str(exc).lower()
+def _normalizar_saida_poof(img: Image.Image) -> Image.Image:
+    if img.has_transparency_data:
+        rgba = img.convert("RGBA")
+        arr = np.asarray(rgba).copy()
+        transparente = arr[..., 3] == 0
+        if transparente.any():
+            arr[transparente, :3] = 255
+        return Image.fromarray(arr, mode="RGBA")
+    return _limpar_fundo_borda_branca(img)
 
-    if status == 429 or nome_cls == "RateLimitError":
-        if "free tier" in lower or "limit: 0" in lower:
-            return (
-                "A chave atual está no nível gratuito (Free Tier), que tem cota 0 "
-                "para o Nano Banana nesta conta. Ative o faturamento no Google AI "
-                "Studio ou informe outra chave em 'Chave IA'."
-            )
-        return (
-            "Limite de requisições da API Nano Banana atingido. "
-            "Aguarde um momento e tente novamente."
-        )
 
-    if status in (401, 403) or nome_cls in ("AuthenticationError", "PermissionDeniedError"):
-        return "Chave da API Nano Banana inválida ou sem permissão de acesso."
-
-    if nome_cls == "APITimeoutError" or "timeout" in lower or "timed out" in lower:
-        return "Tempo limite excedido ao aguardar resposta da API Nano Banana."
-
-    if nome_cls == "APIConnectionError":
-        return "Falha de conexão com a API Nano Banana. Verifique sua internet."
-
-    if (isinstance(status, int) and status >= 500) or nome_cls == "InternalServerError":
-        return "Serviço Nano Banana temporariamente indisponível. Tente novamente em instantes."
-
-    return f"Falha ao chamar a API Nano Banana: {nome_cls}"
+def _traduzir_erro_http(status_code: int, _body_text: str = "") -> str:
+    if status_code == 401:
+        return "Chave da Poof API inválida. Confira a chave configurada em 'Chave IA'."
+    if status_code == 403:
+        return "Acesso negado pela Poof API: verifique sua chave ou permissão em 'Chave IA'."
+    if status_code == 402:
+        return "Créditos da Poof API esgotados neste mês. Confira sua cota no painel da Poof."
+    if status_code == 429:
+        return "Limite de requisições por minuto da Poof API atingido. Aguarde um instante e tente novamente."
+    if status_code == 400:
+        return "A Poof API não conseguiu processar esta imagem. Verifique se o arquivo é válido."
+    if status_code >= 500:
+        return "Serviço Poof API temporariamente indisponível. Tente novamente em instantes."
+    return f"Falha na Poof API (HTTP {status_code})."
 
 
 def remover_fundo_ia(
@@ -157,47 +130,39 @@ def remover_fundo_ia(
     tipo: str = "peca",
     api_key: str | None = None,
     env_path: Path = _ARQUIVO_ENV_PADRAO,
-    client: Any = None,
+    http_post: Callable[..., Any] | None = None,
 ) -> Image.Image:
-    """Isola o objeto principal da imagem em fundo branco usando Nano Banana 2.1."""
-    if client is None:
-        chave = (api_key or "").strip() or obter_chave_api(env_path=env_path)
-        if not chave:
-            raise ValueError(f"Chave da API Nano Banana ({_NOME_CHAVE}) não configurada.")
-        client = genai.Client(
-            api_key=chave,
-            http_options=types.HttpOptions(
-                timeout=_TIMEOUT_REQUISICAO_MS,
-                retry_options=types.HttpRetryOptions(attempts=1),
-            ),
-        )
+    """Remove o fundo da imagem usando a Poof API mantendo transparência limpa."""
+    del tipo  # Mantido na assinatura para compatibilidade com chamadas por bloco.
+    chave = (api_key or "").strip() or obter_chave_api(env_path=env_path)
+    if not chave:
+        raise ValueError(f"Chave da Poof API ({_NOME_CHAVE}) não configurada.")
 
-    prompt = _PROMPT_CARRO if tipo == "carro" else _PROMPT_PECA
+    post_fn = requests.post if http_post is None else http_post
     img_bytes = _preparar_imagem_envio(img)
 
     try:
-        interacao = client.interactions.create(
-            model=MODELO_NANO_BANANA,
-            input=[
-                {"type": "text", "text": prompt},
-                {
-                    "type": "image",
-                    "data": base64.b64encode(img_bytes).decode("utf-8"),
-                    "mime_type": "image/png",
-                },
-            ],
-            response_format={"type": "image"},
-            store=False,
+        resp = post_fn(
+            ENDPOINT_POOF_API,
+            headers={"x-api-key": chave},
+            files={"file": ("imagem.png", img_bytes, "image/png")},
+            timeout=_TIMEOUT_REQUISICAO_SEG,
         )
-    except Exception as exc:
-        raise RuntimeError(_traduzir_erro_ia(exc)) from exc
+    except requests.Timeout as exc:
+        raise RuntimeError("Tempo limite excedido ao aguardar resposta da Poof API.") from exc
+    except requests.RequestException as exc:
+        raise RuntimeError("Falha de conexão com a Poof API. Verifique sua internet.") from exc
 
-    saida_img = getattr(interacao, "output_image", None)
-    dados_b64 = getattr(saida_img, "data", None) if saida_img is not None else None
-    if not dados_b64:
-        raise RuntimeError("A API Nano Banana não retornou uma imagem.")
+    if getattr(resp, "status_code", 0) != 200:
+        raise RuntimeError(_traduzir_erro_http(int(resp.status_code), getattr(resp, "text", "")))
 
-    bruto = base64.b64decode(dados_b64)
-    with Image.open(io.BytesIO(bruto)) as im:
-        im.load()
-        return _limpar_fundo_borda_branca(im)
+    conteudo = getattr(resp, "content", b"")
+    if not conteudo:
+        raise RuntimeError("A Poof API não retornou uma imagem válida.")
+
+    try:
+        with Image.open(io.BytesIO(conteudo)) as im:
+            im.load()
+            return _normalizar_saida_poof(im)
+    except (UnidentifiedImageError, OSError, ValueError) as exc:
+        raise RuntimeError("A Poof API não retornou uma imagem válida.") from exc

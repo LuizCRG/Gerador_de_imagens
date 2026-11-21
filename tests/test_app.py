@@ -300,6 +300,8 @@ def test_pagina_inicial(client):
         'class="btn btn-secondary btn-remover-fundo" data-tipo="print"',
     ):
         assert marcador in html
+    assert "Poof API" in html
+    assert "Nano Banana" not in html
 
 
 def test_get_raiz_limpa_imagens(app_e_client, img_carro, img_peca, img_print):
@@ -479,7 +481,7 @@ def test_remover_fundo_erro_ia_retorna_400_ou_502(tmp_path, img_peca):
 
 
 def test_config_ia_nao_expoe_chave_e_salva_env(tmp_path, monkeypatch):
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("POOF_API_KEY", raising=False)
     env_file = tmp_path / ".env"
     app = criar_app(pasta_saida=tmp_path, env_path=env_file)
     client = app.test_client()
@@ -488,10 +490,10 @@ def test_config_ia_nao_expoe_chave_e_salva_env(tmp_path, monkeypatch):
     assert r0.status_code == 200
     assert r0.json == {"configurada": False}
 
-    r_set = client.post("/api/config/ia", json={"api_key": "AQ.segredo123"})
+    r_set = client.post("/api/config/ia", json={"api_key": "pk_segredo123"})
     assert r_set.status_code == 200
     assert r_set.json == {"configurada": True}
-    assert "GEMINI_API_KEY=AQ.segredo123" in env_file.read_text(encoding="utf-8")
+    assert "POOF_API_KEY=pk_segredo123" in env_file.read_text(encoding="utf-8")
 
     r1 = client.get("/api/config/ia")
     assert r1.status_code == 200

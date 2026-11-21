@@ -847,7 +847,7 @@
     if (!iaApiKeyInput || !btnSalvarChave) return;
     const chave = (iaApiKeyInput.value || "").trim();
     if (!chave) {
-      showError("Informe a chave API do Nano Banana.", "ia");
+      showError("Informe a chave da Poof API.", "ia");
       iaApiKeyInput.focus();
       return;
     }

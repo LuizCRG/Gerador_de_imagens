@@ -1,15 +1,14 @@
-"""Testes unitários para remoção de fundo via Nano Banana (anuncio.ia_fundo)."""
+"""Testes unitários para remoção de fundo via Poof API (anuncio.ia_fundo)."""
 
-import base64
 import io
 from types import SimpleNamespace
 
-import numpy as np
 from PIL import Image, ImageDraw
 import pytest
+import requests
 
 from anuncio.ia_fundo import (
-    MODELO_NANO_BANANA,
+    ENDPOINT_POOF_API,
     obter_chave_api,
     remover_fundo_ia,
     salvar_chave_api,
@@ -22,162 +21,153 @@ def _png_bytes(img: Image.Image) -> bytes:
     return buf.getvalue()
 
 
-class _FakeInteractions:
-    def __init__(self, resposta):
-        self.chamadas = []
-        self._resposta = resposta
-
-    def create(self, **kwargs):
-        self.chamadas.append(kwargs)
-        if isinstance(self._resposta, Exception):
-            raise self._resposta
-        return self._resposta
-
-
-class _FakeClient:
-    def __init__(self, resposta):
-        self.interactions = _FakeInteractions(resposta)
+class _FakeResponse:
+    def __init__(self, status_code: int = 200, content: bytes = b"", text: str = ""):
+        self.status_code = status_code
+        self.content = content
+        self.text = text
 
 
 def test_obter_e_salvar_chave_env(tmp_path, monkeypatch):
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("POOF_API_KEY", raising=False)
     env_file = tmp_path / ".env"
 
     assert obter_chave_api(env_path=env_file) == ""
 
-    salvar_chave_api("  AQ.teste123  ", env_path=env_file)
-    assert "GEMINI_API_KEY=AQ.teste123" in env_file.read_text(encoding="utf-8")
-    assert obter_chave_api(env_path=env_file) == "AQ.teste123"
+    salvar_chave_api("  pk_teste123  ", env_path=env_file)
+    assert "POOF_API_KEY=pk_teste123" in env_file.read_text(encoding="utf-8")
+    assert obter_chave_api(env_path=env_file) == "pk_teste123"
 
     # Variável de ambiente tem prioridade sobre .env
-    monkeypatch.setenv("GEMINI_API_KEY", "AQ.override")
-    assert obter_chave_api(env_path=env_file) == "AQ.override"
+    monkeypatch.setenv("POOF_API_KEY", "pk_override")
+    assert obter_chave_api(env_path=env_file) == "pk_override"
 
 
 def test_salvar_chave_preserva_outras_linhas_env(tmp_path):
     env_file = tmp_path / ".env"
-    env_file.write_text("OUTRA_VAR=abc\nGEMINI_API_KEY=antiga\n", encoding="utf-8")
+    env_file.write_text("OUTRA_VAR=abc\nPOOF_API_KEY=antiga\n", encoding="utf-8")
 
     salvar_chave_api("nova_chave", env_path=env_file)
     conteudo = env_file.read_text(encoding="utf-8")
     assert "OUTRA_VAR=abc" in conteudo
-    assert "GEMINI_API_KEY=nova_chave" in conteudo
+    assert "POOF_API_KEY=nova_chave" in conteudo
     assert "antiga" not in conteudo
 
 
 def test_remover_fundo_sem_chave_erro(tmp_path, monkeypatch):
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("POOF_API_KEY", raising=False)
     im = Image.new("RGB", (64, 64), (100, 100, 100))
-    with pytest.raises(ValueError, match="GEMINI_API_KEY"):
+    with pytest.raises(ValueError, match="POOF_API_KEY"):
         remover_fundo_ia(im, env_path=tmp_path / ".env")
 
 
-def test_remover_fundo_ia_chama_modelo_e_limpa_borda_branca():
+def test_remover_fundo_ia_envia_multipart_poof_e_normaliza_rgba_oculto():
     entrada = Image.new("RGB", (120, 80), (40, 120, 40))
-    ImageDraw.Draw(entrada).rectangle([30, 20, 89, 59], fill=(20, 20, 20))
+    ImageDraw.Draw(entrada).rectangle([30, 20, 89, 59], fill=(30, 120, 200))
 
-    # Saída simulada da IA com fundo quase-branco (249) na borda e detalhe branco interno (249)
-    saida_ia = Image.new("RGB", (120, 80), (249, 249, 249))
-    ImageDraw.Draw(saida_ia).rectangle([25, 15, 94, 64], fill=(20, 20, 20))
-    ImageDraw.Draw(saida_ia).rectangle([50, 30, 69, 49], fill=(249, 249, 249))
+    # Saída RGBA simulada da Poof com RGB residual oculto sob alpha=0
+    saida_poof = Image.new("RGBA", (120, 80), (20, 40, 60, 0))
+    ImageDraw.Draw(saida_poof).rectangle([30, 20, 89, 59], fill=(30, 120, 200, 255))
+    saida_poof.putpixel((29, 20), (30, 120, 200, 128))
+    conteudo_png = _png_bytes(saida_poof)
 
-    b64 = base64.b64encode(_png_bytes(saida_ia)).decode("utf-8")
-    fake_client = _FakeClient(
-        SimpleNamespace(
-            status="completed",
-            output_image=SimpleNamespace(data=b64, mime_type="image/png"),
+    chamadas = []
+
+    def fake_post(url, *, headers=None, files=None, timeout=None):
+        chamadas.append(
+            SimpleNamespace(url=url, headers=headers, files=files, timeout=timeout)
         )
+        return _FakeResponse(status_code=200, content=conteudo_png)
+
+    resultado = remover_fundo_ia(
+        entrada,
+        tipo="carro",
+        api_key="pk_teste",
+        http_post=fake_post,
     )
 
-    resultado = remover_fundo_ia(entrada, tipo="carro", client=fake_client)
+    assert len(chamadas) == 1
+    req = chamadas[0]
+    assert req.url == ENDPOINT_POOF_API == "https://api.poof.bg/v1/remove"
+    assert req.headers == {"x-api-key": "pk_teste"}
+    assert req.timeout == 60
+    assert "file" in req.files
 
-    assert len(fake_client.interactions.chamadas) == 1
-    req = fake_client.interactions.chamadas[0]
-    assert req["model"] == MODELO_NANO_BANANA == "gemini-nano-banana-2.1"
-    assert req["store"] is False
-    assert req["response_format"] == {"type": "image"}
-    assert "vehicle" in req["input"][0]["text"].lower()
-    assert req["input"][1]["type"] == "image"
-
-    assert resultado.mode == "RGB"
+    assert resultado.mode == "RGBA"
     assert resultado.size == (120, 80)
-    # Borda conectada foi normalizada para branco puro (255, 255, 255)
-    assert resultado.getpixel((0, 0)) == (255, 255, 255)
-    # Interior branco isolado pela peça escura NÃO foi forçado para 255
-    assert resultado.getpixel((58, 38)) == (249, 249, 249)
-    assert resultado.getpixel((30, 20)) == (20, 20, 20)
+    # Pixel 100% transparente tem RGB zerado para branco transparente
+    assert resultado.getpixel((0, 0)) == (255, 255, 255, 0)
+    # Sujeito opaco e borda semitransparente preservados
+    assert resultado.getpixel((40, 30)) == (30, 120, 200, 255)
+    assert resultado.getpixel((29, 20)) == (30, 120, 200, 128)
 
 
-def test_remover_fundo_ia_prompt_peca_e_redimensiona_imagem_gigante():
+def test_remover_fundo_ia_redimensiona_imagem_gigante_e_limpa_fallback_rgb():
     gigante = Image.new("RGB", (3000, 1500), (180, 190, 200))
-    saida = Image.new("RGB", (1024, 512), (255, 255, 255))
-    b64 = base64.b64encode(_png_bytes(saida)).decode("utf-8")
-    fake_client = _FakeClient(
-        SimpleNamespace(
-            status="completed",
-            output_image=SimpleNamespace(data=b64, mime_type="image/png"),
-        )
+
+    saida_rgb = Image.new("RGB", (120, 80), (249, 249, 249))
+    ImageDraw.Draw(saida_rgb).rectangle([25, 15, 94, 64], fill=(20, 20, 20))
+    ImageDraw.Draw(saida_rgb).rectangle([50, 30, 69, 49], fill=(249, 249, 249))
+    conteudo_png = _png_bytes(saida_rgb)
+
+    tamanhos_enviados = []
+
+    def fake_post(_url, *, headers=None, files=None, timeout=None):
+        _nome, dados_bytes, _mime = files["file"]
+        enviada = Image.open(io.BytesIO(dados_bytes))
+        tamanhos_enviados.append(enviada.size)
+        return _FakeResponse(status_code=200, content=conteudo_png)
+
+    resultado = remover_fundo_ia(
+        gigante,
+        tipo="peca",
+        api_key="pk_teste",
+        http_post=fake_post,
     )
 
-    remover_fundo_ia(gigante, tipo="peca", client=fake_client)
-    req = fake_client.interactions.chamadas[0]
-    assert "product" in req["input"][0]["text"].lower()
-    enviada = Image.open(io.BytesIO(base64.b64decode(req["input"][1]["data"])))
-    assert max(enviada.size) <= 2048
+    assert len(tamanhos_enviados) == 1
+    assert max(tamanhos_enviados[0]) <= 2048
+    assert resultado.mode == "RGB"
+    assert resultado.getpixel((0, 0)) == (255, 255, 255)
+    assert resultado.getpixel((58, 38)) == (249, 249, 249)
 
 
-def test_remover_fundo_ia_erro_quando_sem_imagem_ou_excecao():
-    im = Image.new("RGB", (64, 64), (100, 100, 100))
-    sem_img = _FakeClient(SimpleNamespace(status="completed", output_image=None))
-    with pytest.raises(RuntimeError, match="não retornou uma imagem"):
-        remover_fundo_ia(im, client=sem_img)
-
-    com_erro = _FakeClient(RuntimeError("falha remota"))
-    with pytest.raises(RuntimeError, match="Nano Banana"):
-        remover_fundo_ia(im, client=com_erro)
-
-
-def test_remover_fundo_ia_cria_client_sem_sleep_infinito(monkeypatch):
-    capturado = {}
-
-    class _ClientStub:
-        def __init__(self, *, api_key=None, http_options=None):
-            capturado["api_key"] = api_key
-            capturado["http_options"] = http_options
-            saida = Image.new("RGB", (32, 32), (255, 255, 255))
-            b64 = base64.b64encode(_png_bytes(saida)).decode("utf-8")
-            self.interactions = _FakeInteractions(
-                SimpleNamespace(
-                    status="completed",
-                    output_image=SimpleNamespace(data=b64, mime_type="image/png"),
-                )
-            )
-
-    monkeypatch.setattr("anuncio.ia_fundo.genai.Client", _ClientStub)
-    im = Image.new("RGB", (64, 64), (100, 100, 100))
-    remover_fundo_ia(im, api_key="AQ.chave_teste")
-
-    assert capturado["api_key"] == "AQ.chave_teste"
-    opts = capturado["http_options"]
-    assert opts is not None
-    assert opts.timeout == 60_000
-    assert opts.retry_options is not None
-    assert opts.retry_options.attempts == 1
-
-
-def test_remover_fundo_ia_traduz_erro_cota_free_tier_e_chave_invalida():
+def test_remover_fundo_ia_traduz_erros_http_poof():
     im = Image.new("RGB", (64, 64), (100, 100, 100))
 
-    RateLimitError = type("RateLimitError", (Exception,), {"status_code": 429})
-    free_tier = _FakeClient(
-        RateLimitError(
-            "Error code: 429 - limit: 0 input tokens per minute on Free Tier"
-        )
-    )
-    with pytest.raises(RuntimeError, match="Free Tier"):
-        remover_fundo_ia(im, client=free_tier)
+    casos = [
+        (401, '{"message":"Invalid API key"}', "inválida"),
+        (403, '{"message":"Forbidden"}', "permissão"),
+        (402, '{"message":"Insufficient credits"}', "Créditos"),
+        (429, '{"message":"Too many requests"}', "Limite"),
+        (400, '{"message":"Invalid image format"}', "Poof API"),
+        (503, "Service Unavailable", "indisponível"),
+    ]
+    for status, corpo, esperado in casos:
+        def fake_post(_url, **_kwargs):
+            return _FakeResponse(status_code=status, text=corpo)
 
-    AuthError = type("AuthenticationError", (Exception,), {"status_code": 401})
-    invalida = _FakeClient(AuthError("API_KEY_INVALID"))
-    with pytest.raises(RuntimeError, match="inválida"):
-        remover_fundo_ia(im, client=invalida)
+        with pytest.raises(RuntimeError, match=esperado):
+            remover_fundo_ia(im, api_key="pk_teste", http_post=fake_post)
+
+
+def test_remover_fundo_ia_erros_rede_timeout_e_bytes_invalidos():
+    im = Image.new("RGB", (64, 64), (100, 100, 100))
+
+    def levantar_timeout(_url, **_kwargs):
+        raise requests.Timeout("timed out")
+
+    with pytest.raises(RuntimeError, match="Tempo limite"):
+        remover_fundo_ia(im, api_key="pk_teste", http_post=levantar_timeout)
+
+    def levantar_conexao(_url, **_kwargs):
+        raise requests.ConnectionError("dns fail")
+
+    with pytest.raises(RuntimeError, match="conexão"):
+        remover_fundo_ia(im, api_key="pk_teste", http_post=levantar_conexao)
+
+    def retornar_lixo(_url, **_kwargs):
+        return _FakeResponse(status_code=200, content=b'{"error": "not an image"}')
+
+    with pytest.raises(RuntimeError, match="imagem válida"):
+        remover_fundo_ia(im, api_key="pk_teste", http_post=retornar_lixo)
